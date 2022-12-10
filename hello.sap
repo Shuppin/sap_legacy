@@ -1,0 +1,8 @@
+x = 2;
+{
+    y = x + 8;
+};
+my_Var = x + y;
+w = (x + my_Var - y * 17) / 45;
+a = (x / (4 * x * 2) - -y + 14) / w + (my_Var - 4);
+_private_Var = a + y - my_Var;
