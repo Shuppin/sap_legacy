@@ -29,7 +29,6 @@ void tokenize(string code) {
             tokens.push_back(token);
         }
         // ...
-        else if 
     }
 }
 

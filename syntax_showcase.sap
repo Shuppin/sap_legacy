@@ -1,0 +1,23 @@
+JUST TO GET AN IDEA OF SYNTAX
+DOESN'T ACTUALLY WORK (yet) 
+
+
+/* hello! */
+
+def myfunc(arg1, arg2, kwarg1="hello") -> str {
+
+    condition: bool = True
+
+    if arg1 > arg2 {
+
+    }
+    elif arg2 > arg1 {
+
+    }
+    else {
+        
+    }
+
+    while 
+
+}

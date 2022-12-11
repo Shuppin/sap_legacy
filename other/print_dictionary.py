@@ -1,6 +1,7 @@
+# Short script to neatly print dictionary
+# Implmented by the Node class in main
 
-
-my_dict = {
+example_dict = {
     1: {
         2: {
             3: 4,
@@ -21,6 +22,7 @@ my_dict = {
     }
 }
 
+# Recursive function to neatly print a dictionary
 def iterdict(d, depth=1):
     text = ""
     if depth == 1:
@@ -30,6 +32,11 @@ def iterdict(d, depth=1):
             text += ("   " * depth + str(key) + ": {\n")
             text += iterdict(value, depth+1)
             text += ("   " * depth + "},\n")
+        elif isinstance(value, list):
+                text += "   " * depth + str(key) + ": [\n"
+                for node in value:
+                    text += "   " * (depth + 2) + str(node) + ",\n"
+                text += "   " * depth + "],\n"
         else:            
             text += ("   " * (depth+1) + str(key) + ": " + str(value) + ",\n")
     if depth == 1:
@@ -37,5 +44,5 @@ def iterdict(d, depth=1):
 
     return text
 
-text = iterdict(my_dict)
+text = iterdict(example_dict)
 print(text)

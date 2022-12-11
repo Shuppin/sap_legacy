@@ -1,8 +1,24 @@
-x = 2;
-{
-    y = x + 8;
-};
-my_Var = x + y;
-w = (x + my_Var - y * 17) / 45;
-a = (x / (4 * x * 2) - -y + 14) / w + (my_Var - 4);
-_private_Var = a + y - my_Var;
+/* Initialising variables */
+x : int;
+pi_const: real;
+very_useful_number: real;
+
+evenMoreUsefulNumber: real = -100;
+the_most_useful_number_ever: int = 2 + 2 + evenMoreUsefulNumber;
+age: int = 16;
+
+x = -20;
+pi_const = 3.14;
+
+/* Some crazy calculations */
+very_useful_number = (age + x) * pi_const;
+
+evenMoreUsefulNumber = (age/pi_const);
+
+the_most_useful_number_ever = the_most_useful_number_ever + (age // pi_const);
+
+/* This is a comment */
+/*
+    Lots of new fun stuff!
+    Type checking coming soon...
+*/

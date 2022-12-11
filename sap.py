@@ -29,26 +29,44 @@ typeof = type
 class type(Enum):
     """
     Enum class to hold all the data types for SAP language
-    (Not all types listed here have been implemented)
     """
     INTEGER = object()
-    STR = object()
+    REAL = object()
+    INTEGER_CONST = object()
+    REAL_CONST = object()
+
     MULT = object()
-    DIV = object()
+    INTEGER_DIV = object()
+    FLOAT_DIV = object
     PLUS = object()
     MINUS = object()
+
     LPAREN = object()
     RPAREN = object()
     IDENTIFIER = object()
-    BOOL = object()
     ASSIGN = object()
     COMMENT = object()
+
     SEMI = object()
+    COLON = object()
+
     BEGIN = object()
     END = object()
-    SOF = object()
+
     EOF = object()
-    NEWLINE = object()
+
+
+class global_scope(dict):
+    def __init_subclass__(cls):
+        return super().__init_subclass__()
+    
+    def __str__(self):
+        text = []
+
+        for key, value in sorted(self.items(), key=lambda x: x[1][0], reverse=True):
+            text.append("  <" + str(value[0]) + "> " + str(key) +  " = " + str(value[1]))
+        
+        return "\n".join(text)
 
 
 class Token:
@@ -60,7 +78,7 @@ class Token:
     def __init__(self, start_pos: int, datatype: type, id: str | int | None):
         self.start_pos: int = start_pos
         self.type: type = datatype
-        self.id: str | int = id
+        self.id: str | int | None = id
 
     def __str__(self) -> str:
         return f"Token[type = {self.type}, id = '{self.id}', start_pos = {self.start_pos}]"
@@ -87,9 +105,9 @@ class Lexer:
 
     The lexer will generate:
     ```
-    Token[type = type.INTEGER, id = '2', startPos = 0]
+    Token[type = type.INTEGER_CONST, id = '2', startPos = 0]
     Token[type = type.PLUS, id = '+', startPos = 1]
-    Token[type = type.INTEGER, id = '2', startPos = 2]
+    Token[type = type.INTEGER_CONST, id = '2', startPos = 2]
     ```
     """
     def __init__(self, text):
@@ -99,10 +117,15 @@ class Lexer:
         self.linepos: int = 0
         self.current_char: str = self.text[self.pos]
 
+        self.RESERVED_KEYWORDS: dict = {
+            'int': type.INTEGER,
+            'real': type.REAL
+        }
+
     def error(self):
         raise Exception(f'Error parsing input on line {self.lineno}, pos {self.linepos}\n')
 
-    def advance(self) -> None:
+    def advance(self):
         """Advance `self.pos` and set `self.current_char`"""
         self.pos += 1
         self.linepos += 1
@@ -127,33 +150,50 @@ class Lexer:
             result += self.current_char
             self.advance()
 
-        return Token(start_position, type.IDENTIFIER, result)
+        # Checks if `result` is a keyword or not and returns the appropiate type.
+        # Gets the type associated with `result if applicable, else default to `type.IDENTIFIER`
+        token_type = self.RESERVED_KEYWORDS.get(result, type.IDENTIFIER)
+
+        token = Token(start_position, token_type, result)
+
+        return token
 
     def skip_whitespace(self):
         """Advances `self.pos` until a non-whitespace character has been reached"""
         while self.current_char is not None and self.current_char == " ":
             self.advance()
 
-    def integer(self) -> int:
-        """Consumes an integer from the input code and returns it"""
-        integer = ''
+    def skip_comment(self):
+        """Advances `self.pos` until a comment terminator (*/) has been reached"""
+        while not (self.current_char == "*" and self.peek() == "/"):
+            self.advance()
+        # Advance twice more to skip over the final "*/"
+        self.advance()
+        self.advance()
+
+    def number(self) -> int:
+        """Consumes a number from the input code and returns it"""
+        start_pos = self.pos
+        number = ''
+
         while self.current_char is not None and self.current_char.isdigit():
-            integer += self.current_char
+            number += self.current_char
             self.advance()
-        return int(integer)
-
-    def operator(self):
-        """Consumes an operator from the input code and returns it"""
-        raise NotImplemented("operator() function not implemented")
-
-        base_operators = ['+', '-', '/', '*']
-        operator = ''
-
-        if self.current_char in base_operators:
-            operator += self.current_char
+        
+        if self.current_char == ".":
+            number += self.current_char
             self.advance()
 
-        return operator
+            while self.current_char is not None and self.current_char.isdigit():
+                number += self.current_char
+                self.advance()
+
+            token = Token(start_pos, type.REAL_CONST, float(number))
+
+        else:
+            token = Token(start_pos, type.INTEGER_CONST, int(number))
+
+        return token
 
     def get_next_token(self) -> Token:
         """
@@ -162,39 +202,34 @@ class Lexer:
         """
         while self.current_char is not None:
 
-            if self.current_char == " ":
-                self.skip_whitespace()
-                continue
+            # Ignored characters
 
-            elif self.current_char == "\n":
+            if self.current_char == "\n":
                 self.lineno += 1
                 self.linepos = 0
                 self.advance()
                 continue
 
+            elif self.current_char == " ":
+                self.skip_whitespace()
+                continue
+
+            elif self.current_char == "/" and self.peek() == "*":
+                self.skip_comment()
+                continue
+
+            # Terminals
+
             if self.current_char.isalpha() or self.current_char == "_":
                 return self._identifier()
 
             elif self.current_char.isdigit():
-                return Token(self.pos, type.INTEGER, self.integer())
+                return self.number()
+
+            # Operators
 
             elif self.current_char == "=":
                 token = Token(self.pos, type.ASSIGN, self.current_char)
-                self.advance()
-                return token
-
-            elif self.current_char == "{":
-                token = Token(self.pos, type.BEGIN, self.current_char)
-                self.advance()
-                return token
-
-            elif self.current_char == "}":
-                token = Token(self.pos, type.END, self.current_char)
-                self.advance()
-                return token
-
-            elif self.current_char == ";":
-                token = Token(self.pos, type.SEMI, self.current_char)
                 self.advance()
                 return token
 
@@ -204,8 +239,15 @@ class Lexer:
                 return token
 
             elif self.current_char == '/':
-                token = Token(self.pos, type.DIV, self.current_char)
+
+                if self.peek() != "/":
+                    token = Token(self.pos, type.FLOAT_DIV, self.current_char)
+                else:
+                    token = Token(self.pos, type.INTEGER_DIV, self.current_char)
+                    self.advance()
+
                 self.advance()
+
                 return token
 
             elif self.current_char == '+':
@@ -218,6 +260,18 @@ class Lexer:
                 self.advance()
                 return token
 
+            # Symbols
+
+            elif self.current_char == ";":
+                token = Token(self.pos, type.SEMI, self.current_char)
+                self.advance()
+                return token
+
+            elif self.current_char == ":":
+                token = Token(self.pos, type.COLON, self.current_char)
+                self.advance()
+                return token
+
             elif self.current_char == '(':
                 token = Token(self.pos, type.LPAREN, self.current_char)
                 self.advance()
@@ -225,6 +279,16 @@ class Lexer:
 
             elif self.current_char == ')':
                 token = Token(self.pos, type.RPAREN, self.current_char)
+                self.advance()
+                return token
+
+            elif self.current_char == "{":
+                token = Token(self.pos, type.BEGIN, self.current_char)
+                self.advance()
+                return token
+
+            elif self.current_char == "}":
+                token = Token(self.pos, type.END, self.current_char)
                 self.advance()
                 return token
 
@@ -273,7 +337,7 @@ class Parser:
 
     def program(self) -> Compound:
         """
-        program -> statement_list | compound_statement <`EOF`>
+        program -> (statement_list | compound_statement) <`EOF`>
         """
         if self.current_token.type == type.BEGIN:
             node = self.compound_statement()
@@ -286,12 +350,24 @@ class Parser:
             print("Calling eat() from line", getframeinfo(currentframe()).lineno)
         self.eat(type.EOF)
 
-        # node = self.compound_statement()
-        # if PRINT_EAT_STACK:
-        # print("Calling eat() from line", getframeinfo(currentframe()).lineno)
-        # self.eat(type.EOF)
-
         return node
+
+    def type_spec(self) -> TypeNode:
+        """
+        type_spec -> `INTEGER` | `REAL`
+        """
+        token = self.current_token
+        if token.type == type.INTEGER:
+            if PRINT_EAT_STACK:
+                print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+            self.eat(type.INTEGER)
+        else:
+            if PRINT_EAT_STACK:
+                print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+            self.eat(type.REAL)
+        node = TypeNode(token)
+        return node
+
 
     def compound_statement(self) -> Compound:
         """
@@ -329,37 +405,79 @@ class Parser:
             self.error()
 
         return results
-
+        
     def statement(self) -> Node:
         """
         statement -> compound_statement
-                   | assignment_statement
+                   | variable_change
                    | empty
         """
         if self.current_token.type == type.BEGIN:
             node = self.compound_statement()
         elif self.current_token.type == type.IDENTIFIER:
-            node = self.assignment_statement()
+            node = self.variable_change()
         else:
             node = self.empty()
 
         return node
 
-    def assignment_statement(self) -> AssignOp:
+    def variable_change(self) -> VarDecl | AssignOp:
         """
-        assignment_statement -> variable ASSIGN expr
+        variable_change -> variable (`COLON` | `ASSIGN`)
         """
-        left = self.variable()
+        var_node = self.variable()
+        op_node = self.current_token
+        if op_node.type == type.COLON:
+            node = self.declaration_statement(var_node)
+        else:
+            node = self.assignment_statement(var_node)
+
+        return node
+
+    def declaration_statement(self, var_node):
+        """
+        declaration_statement -> variable `COLON` type_spec `ASSIGN` expr | variable `COLON` type_spec
+        """
+        colon_op = self.current_token
+        if PRINT_EAT_STACK:
+            print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+        self.eat(type.COLON)
+
+        type_node = self.type_spec()
+        
+        # variable `COLON` type_spec `ASSIGN` expr
+        if self.current_token.type == type.ASSIGN:
+            assign_op = self.current_token
+            if PRINT_EAT_STACK:
+                print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+            self.eat(type.ASSIGN)
+            expr_node = self.expr()
+
+            node = VarDecl(var_node, colon_op, type_node, assign_op, expr_node)
+        
+        # variable `COLON` type_spec
+        else:
+            node = VarDecl(var_node, colon_op, type_node)
+
+        return node
+
+    def assignment_statement(self, var_node) -> AssignOp:
+        """
+        assignment_statement -> variable `ASSIGN` expr
+        """
         token = self.current_token
         if PRINT_EAT_STACK:
             print("Calling eat() from line", getframeinfo(currentframe()).lineno)
         self.eat(type.ASSIGN)
         right = self.expr()
-        node = AssignOp(left, token, right)
+        node = AssignOp(var_node, token, right)
 
         return node
 
     def empty(self) -> NoOp:
+        """
+        empty ->
+        """
         return NoOp()
 
     def expr(self) -> Node:
@@ -388,12 +506,12 @@ class Parser:
 
     def term(self) -> Node:
         """
-        term -> factor ( (`MUL`|`DIV`) factor)*
+        term -> factor ((`MUL`|`INTEGER_DIV`|`FLOAT_DIV`) factor)*
         """
         node = self.factor()
 
         # factor ( (`MUL`|`DIV`) factor)*
-        while self.current_token.type in (type.MULT, type.DIV):
+        while self.current_token.type in (type.MULT, type.INTEGER_DIV, type.FLOAT_DIV):
             token = self.current_token
 
             if token.type == type.MULT:
@@ -401,24 +519,28 @@ class Parser:
                     print("Calling eat() from line", getframeinfo(currentframe()).lineno)
                 self.eat(type.MULT)
 
-            elif token.type == type.DIV:
+            elif token.type == type.INTEGER_DIV:
                 if PRINT_EAT_STACK:
                     print("Calling eat() from line", getframeinfo(currentframe()).lineno)
-                self.eat(type.DIV)
+                self.eat(type.INTEGER_DIV)
+            
+            elif token.type == type.FLOAT_DIV:
+                if PRINT_EAT_STACK:
+                    print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+                self.eat(type.FLOAT_DIV)
 
             node = BinOp(left=node, op=token, right=self.factor())
 
         return node
 
     def factor(self) -> Node:
-        """Return an `INTEGER` token value
-        
+        """
         factor -> `PLUS` factor
                 | `MINUS` factor
-                | `INTEGER` 
+                | `INTEGER_CONST`
+                | `REAL_CONST` 
                 | `LPAREN` expr `RPAREN`
                 | variable
-
         """
         token = self.current_token
 
@@ -438,12 +560,19 @@ class Parser:
             node = UnaryOp(token, self.factor())
             return node
 
-        # `INTEGER`
-        elif token.type == type.INTEGER:
+        # `INTEGER_CONST`
+        elif token.type == type.INTEGER_CONST:
             if PRINT_EAT_STACK:
                 print("Calling eat() from line", getframeinfo(currentframe()).lineno)
-            self.eat(type.INTEGER)
-            return Int(token)
+            self.eat(type.INTEGER_CONST)
+            return Num(token)
+
+        # `REAL_CONST`
+        elif token.type == type.REAL_CONST:
+            if PRINT_EAT_STACK:
+                print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+            self.eat(type.REAL_CONST)
+            return Num(token)
 
         # `LPAREN` expr `RPAREN`
         elif token.type == type.LPAREN:
@@ -476,28 +605,37 @@ class Parser:
 
         Here is our program grammar:
 
-        program -> <`SOF`> (statement_list | compound_statement) <`EOF`>
+        program -> (statement_list | compound_statement) <`EOF`>
+
+        type_spec -> `INTEGER` | `REAL`
 
         compound_statement -> `BEGIN` statement_list `END`
 
-        statement_list -> statement | statement `SEMI` statement_list
+        statement_list -> statement
+                        | statement `SEMI` statement_list
 
         statement -> compound_statement
-                   | assignment_statement
+                   | variable_change
                    | empty
 
-        assignment_statement -> variable ASSIGN expr
+        variable_change -> variable (`COLON` | `ASSIGN`)
+
+        declaration_statement -> variable `COLON` type_spec `ASSIGN` expr
+                               | variable `COLON` type_spec
+
+        assignment_statement -> variable `ASSIGN` expr
 
         empty ->
         // What did you expect cuh
 
         expr -> term ((`PLUS`|`MINUS`) term)*
 
-        term -> factor ((`MUL`|`DIV`) factor)*
+        term -> factor ((`MUL`|`INTEGER_DIV`|`FLOAT_DIV`) factor)*
 
         factor -> `PLUS` factor
                 | `MINUS` factor
-                | `INTEGER` 
+                | `INTEGER_CONST`
+                | `REAL_CONST` 
                 | `LPAREN` expr `RPAREN`
                 | variable
 
@@ -518,6 +656,8 @@ class Parser:
 
 class Node:
     """
+    Node base class
+
     Represents a node on an abstract syntax tree
     """
     def __str__(self) -> str:
@@ -561,10 +701,18 @@ INTERIOR NODES
 (in order of precedence)
 """
 
-
 class Compound(Node):
     def __init__(self):
         self.children: list[Node] = []
+
+
+class VarDecl(Node):
+    def __init__(self, var_node, colon_op, type_node, assign_op=None, expr_node=None):
+        self.var_node: Var = var_node
+        self.colon_op: Token = colon_op
+        self.type_node: TypeNode = type_node
+        self.assign_op: Token = assign_op
+        self.expr_node: Node = expr_node
 
 
 class AssignOp(Node):
@@ -592,6 +740,11 @@ LEAF NODES
 (in order of precedence)
 """
 
+class TypeNode(Node):
+    def __init__(self, token):
+        self.token: Token = token
+        self.id = self.token.id
+
 
 class Var(Node):
     def __init__(self, token):
@@ -599,7 +752,7 @@ class Var(Node):
         self.id = self.token.id
 
 
-class Int(Node):
+class Num(Node):
     def __init__(self, token):
         self.token: Token = token
         self.id: int = self.token.id
@@ -618,7 +771,7 @@ class Interpreter:
     It works by 'visiting' each node in the tree and processing it based on its attributes and surrounding nodes.
     """
 
-    global_scope = {}
+    global_scope = global_scope()
 
     def __init__(self, text):
         self.parser: Parser = Parser(text)
@@ -632,14 +785,15 @@ class Interpreter:
         tree = self.parser.parse()
         if PRINT_TREE:
             print(tree)
+            #exit()
         return self.visit(tree)
 
-    def visit(self, node):
+    def visit(self, node: Node):
         method_name = "visit_" + typeof(node).__name__
         visitor = getattr(self, method_name, self.default_visit)
         return visitor(node)
 
-    def default_visit(self, node):
+    def default_visit(self, node: Node):
         """
         Code gets executed when there is no `visit_(...)` function associated with a given `Node` object.
         """
@@ -649,9 +803,24 @@ class Interpreter:
         for child in node.children:
             self.visit(child)
 
+    def visit_VarDecl(self, node: VarDecl):
+        variable_id = node.var_node.id
+        variable_type = node.type_node.id
+
+        if variable_id in self.global_scope:
+            raise ValueError("Attempted to intialise variable with same name!")
+
+        if node.expr_node is not None:
+            self.global_scope[variable_id] = [variable_type, self.visit(node.expr_node)]
+        else:
+            self.global_scope[variable_id] = [variable_type, None]
+
     def visit_AssignOp(self, node: AssignOp):
         variable_id = node.left.id
-        self.global_scope[variable_id] = self.visit(node.right)
+        if variable_id in self.global_scope:
+            self.global_scope[variable_id][1] = self.visit(node.right)
+        else:
+            raise ValueError("Attempted to assign value to uninitialised varaible!")
 
     def visit_UnaryOp(self, node: UnaryOp):
         if node.op.type == type.PLUS:
@@ -666,18 +835,24 @@ class Interpreter:
             return self.visit(node.left) - self.visit(node.right)
         elif node.op.type == type.MULT:
             return self.visit(node.left) * self.visit(node.right)
-        elif node.op.type == type.DIV:
-            return self.visit(node.left) // self.visit(node.right)
+        elif node.op.type == type.INTEGER_DIV:
+            return int(self.visit(node.left) // self.visit(node.right))
+        elif node.op.type == type.FLOAT_DIV:
+            return self.visit(node.left) / self.visit(node.right)
+
+    def visit_TypeNode(self, node: TypeNode):
+        # Not utilised yet
+        pass
 
     def visit_Var(self, node: Var):
         variable_id = node.id
-        val = self.global_scope.get(variable_id)
+        val = self.global_scope.get(variable_id)[1]
         if val is None:
             raise NameError(repr(variable_id))
         else:
             return val
 
-    def visit_Int(self, node: Int):
+    def visit_Num(self, node: Num):
         return node.id
 
     def visit_NoOp(self, node: NoOp):
@@ -694,8 +869,8 @@ class Driver:
     """
     Driver code to execute the program
     """
-    def __init__(self):
-        pass
+    def __init__(self,):
+        self.filename = None
 
     def execute(self, mode):
         """
@@ -704,7 +879,10 @@ class Driver:
         if mode == "cmdline":
             self.cmdline_input()
         elif mode == "file":
-            self.file_input()
+            if self.filename is not None:
+                self.file_input(self.filename)
+            else:
+                self.file_input()
         else:
             raise ValueError(f"mode '{repr(mode)}' is not a valid mode.")
 
@@ -756,4 +934,5 @@ class Driver:
 
 if __name__ == '__main__':
     driver = Driver()
+    driver.filename = "./hello.sap"
     driver.execute(MODE)
