@@ -11,9 +11,9 @@ from inspect import currentframe, getframeinfo
 
 MODE = "file"
 
-PRINT_TOKENS = True
+PRINT_TOKENS = False
 PRINT_EAT_STACK = False
-PRINT_TREE = True
+PRINT_TREE = False
 
 # Since the `type()` function is overwritten,
 # this code allows us to still use the original `type()` function by calling `typeof()`
@@ -30,30 +30,25 @@ class type(Enum):
     """
     Enum class to hold all the data types for SAP language
     """
-    INTEGER = object()
-    REAL = object()
-    INTEGER_CONST = object()
-    REAL_CONST = object()
-
-    MULT = object()
-    INTEGER_DIV = object()
-    FLOAT_DIV = object
-    PLUS = object()
-    MINUS = object()
-
-    LPAREN = object()
-    RPAREN = object()
-    IDENTIFIER = object()
-    ASSIGN = object()
-    COMMENT = object()
-
-    SEMI = object()
-    COLON = object()
-
-    BEGIN = object()
-    END = object()
-
-    EOF = object()
+    INTEGER         = object()
+    REAL            = object()
+    INTEGER_CONST   = object()
+    REAL_CONST      = object()
+    MULT            = object()
+    INTEGER_DIV     = object()
+    FLOAT_DIV       = object()
+    PLUS            = object()
+    MINUS           = object()
+    LPAREN          = object()
+    RPAREN          = object()
+    IDENTIFIER      = object()
+    ASSIGN          = object()
+    COMMENT         = object()
+    SEMI            = object()
+    COLON           = object()
+    BEGIN           = object()
+    END             = object()
+    EOF             = object()
 
 
 class global_scope(dict):
@@ -115,7 +110,7 @@ class Lexer:
         self.pos: int = 0
         self.lineno: int = 1
         self.linepos: int = 0
-        self.current_char: str = self.text[self.pos]
+        self.current_char: str | None = self.text[self.pos]
 
         self.RESERVED_KEYWORDS: dict = {
             'int': type.INTEGER,
@@ -123,7 +118,7 @@ class Lexer:
         }
 
     def error(self):
-        raise Exception(f'Error parsing input on line {self.lineno}, pos {self.linepos}\n')
+        raise Exception(f'Lexer :: Error parsing input on line {self.lineno}, pos {self.linepos}\n')
 
     def advance(self):
         """Advance `self.pos` and set `self.current_char`"""
@@ -171,7 +166,7 @@ class Lexer:
         self.advance()
         self.advance()
 
-    def number(self) -> int:
+    def number(self) -> Token:
         """Consumes a number from the input code and returns it"""
         start_pos = self.pos
         number = ''
@@ -317,7 +312,7 @@ class Parser:
         self.current_token: Token = self.lexer.get_next_token()
 
     def error(self):
-        raise Exception(f"Error parsing input on line {self.lexer.lineno}, pos {self.lexer.linepos}\n"
+        raise Exception(f"Parser :: Error parsing input on line {self.lexer.lineno}, pos {self.lexer.linepos}\n"
                         f"Unexpected type <'{self.current_token.type.name}'>")
 
     def eat(self, expected_type: type):
@@ -647,10 +642,35 @@ class Parser:
 
         return node
 
+###########################################
+#                                         #
+#   Node vistor code                      #
+#                                         #
+###########################################
+
+class NodeVisitor:
+    """
+    NodeVisitor base class
+
+    Base class for all classes which visit/walk through a syntax tree
+    """
+
+    def visit(self, node: Node):
+        method_name = "visit_" + typeof(node).__name__
+        visitor = getattr(self, method_name, self.default_visit)
+        return visitor(node)
+
+
+    def default_visit(self, node: Node):
+        """
+        Code gets executed when there is no `visit_(...)` function associated with a given `Node` object.
+        """
+        raise Exception(f"{self.__class__.__name__} :: No visit_{typeof(node).__name__} method")
+
 
 ###########################################
 #                                         #
-#   Interpreter code                      #
+#  Node defintions                        #
 #                                         #
 ###########################################
 
@@ -711,8 +731,8 @@ class VarDecl(Node):
         self.var_node: Var = var_node
         self.colon_op: Token = colon_op
         self.type_node: TypeNode = type_node
-        self.assign_op: Token = assign_op
-        self.expr_node: Node = expr_node
+        self.assign_op: Token | None = assign_op
+        self.expr_node: Node | None = expr_node
 
 
 class AssignOp(Node):
@@ -743,7 +763,7 @@ LEAF NODES
 class TypeNode(Node):
     def __init__(self, token):
         self.token: Token = token
-        self.id = self.token.id
+        self.id = self.token.type
 
 
 class Var(Node):
@@ -755,49 +775,158 @@ class Var(Node):
 class Num(Node):
     def __init__(self, token):
         self.token: Token = token
-        self.id: int = self.token.id
+        self.id: int | str | None = self.token.id
 
 
 class NoOp(Node):
     pass
 
 
-class Interpreter:
+###########################################
+#                                         #
+#   Symbol table code                     #
+#                                         #
+###########################################
+
+class Symbol:
+    """
+    Symbol base class
+    """
+    def __init__(self, name, datatype = "<builtin>"):
+        self.name: str = name
+        self.type: BuiltinSymbol | str = datatype
+
+    def __str__(self):
+        return self.name
+
+
+class BuiltinSymbol(Symbol):
+    """
+    Symbol which represents built in types
+    """
+    def __init__(self, name):
+        super().__init__(name)
+
+    def __str__(self):
+        return str(self.type) + " " + str(self.name)
+
+
+class VarSymbol(Symbol):
+    """
+    Symbol which represents user-defined types
+    """
+    def __init__(self, name, datatype):
+        super().__init__(name, datatype)
+    
+    def __str__(self):
+        return "<" + str(self.type.name) + "> id: '" + str(self.name) + "'"
+
+
+class SymbolTable:
+    """
+    Class to store all the program symbols
+    """
+    def __init__(self):
+        self._symbols: dict[str, Symbol] = {}
+        self.define(BuiltinSymbol(type.INTEGER))
+        self.define(BuiltinSymbol(type.REAL))
+
+    def __str__(self):
+        text = ""
+        for _, symbol in sorted(self._symbols.items(), key=lambda x: str(x[1].type)):
+            text += "  " + str(symbol) + "\n"
+        return text
+
+    def define(self, symbol: Symbol):
+        self._symbols[symbol.name] = symbol
+
+    def lookup(self, name: str) -> Symbol | None:
+        symbol = self._symbols.get(name)
+        return symbol
+
+
+class SymbolTableBuilder(NodeVisitor):
+    """
+    Constructs the symbol table and performs type-checks before runtime
+    """
+    def __init__(self):
+        self.symbol_table: SymbolTable = SymbolTable()
+
+    def visit_Compound(self, node: Compound):
+        for child in node.children:
+            self.visit(child)
+
+    def visit_VarDecl(self, node: VarDecl):
+        type_id = node.type_node.id
+        type_symbol = self.symbol_table.lookup(type_id)
+        var_id = node.var_node.id
+
+        if self.symbol_table.lookup(var_id) is not None:
+            raise ValueError("TypeChecker :: Attempted to intialise variable with same name!")
+
+        else:
+            var_symbol = VarSymbol(var_id, type_symbol)
+            self.symbol_table.define(var_symbol)
+
+    def visit_AssignOp(self, node: AssignOp):
+        var_id = node.left.id
+        var_symbol = self.symbol_table.lookup(var_id)
+
+        if var_symbol is None:
+            raise NameError(f"TypeChecker :: Attempted to assign value to uninitialised varaible {repr(var_id)}!")
+
+        self.visit(node.right)
+
+    def visit_UnaryOp(self, node: UnaryOp):
+        self.visit(node.expr)
+
+    def visit_BinOp(self, node: BinOp):
+        self.visit(node.left)
+        self.visit(node.right)
+
+    def visit_TypeNode(self, node):
+        pass
+
+    def visit_Var(self, node: Var):
+        var_id = node.id
+        var_symbol = self.symbol_table.lookup(var_id)
+
+        if var_symbol is None:
+            raise NameError(f"TypeChecker :: Attempted to use uninitialised value {repr(var_id)}")
+
+    def visit_Num(self, node):
+        pass
+
+    def visit_NoOp(self, node):
+        pass
+
+
+###########################################
+#                                         #
+#   Interpreter code                      #
+#                                         #
+###########################################
+
+class Interpreter(NodeVisitor):
     """
     Main interpreter class
 
     The interpreter is responsible for processing abstract syntax trees
     and compiling (not machine code) them into a final result.
     It works by 'visiting' each node in the tree and processing it based on its attributes and surrounding nodes.
+
+    It also handles type-checking at runtime
     """
 
     global_scope = global_scope()
 
-    def __init__(self, text):
-        self.parser: Parser = Parser(text)
-
-    def interpret(self):
+    def interpret(self, tree: Node):
         """
         Initiates the recursive descent algorithm,
         generates a syntax tree,
         and executes the code.
         """
-        tree = self.parser.parse()
-        if PRINT_TREE:
-            print(tree)
-            #exit()
         return self.visit(tree)
-
-    def visit(self, node: Node):
-        method_name = "visit_" + typeof(node).__name__
-        visitor = getattr(self, method_name, self.default_visit)
-        return visitor(node)
-
-    def default_visit(self, node: Node):
-        """
-        Code gets executed when there is no `visit_(...)` function associated with a given `Node` object.
-        """
-        raise Exception(f"No visit_{typeof(node).__name__} method")
 
     def visit_Compound(self, node: Compound):
         for child in node.children:
@@ -805,22 +934,22 @@ class Interpreter:
 
     def visit_VarDecl(self, node: VarDecl):
         variable_id = node.var_node.id
-        variable_type = node.type_node.id
+        variable_type_name = node.type_node.id.name
 
-        if variable_id in self.global_scope:
-            raise ValueError("Attempted to intialise variable with same name!")
+        if variable_id in self.global_scope: 
+            raise ValueError("Interpreter :: Attempted to intialise variable with same name!")
 
         if node.expr_node is not None:
-            self.global_scope[variable_id] = [variable_type, self.visit(node.expr_node)]
+            self.global_scope[variable_id] = [variable_type_name, self.visit(node.expr_node)]
         else:
-            self.global_scope[variable_id] = [variable_type, None]
+            self.global_scope[variable_id] = [variable_type_name, None]
 
     def visit_AssignOp(self, node: AssignOp):
         variable_id = node.left.id
         if variable_id in self.global_scope:
             self.global_scope[variable_id][1] = self.visit(node.right)
         else:
-            raise ValueError("Attempted to assign value to uninitialised varaible!")
+            raise ValueError("Interpreter :: Attempted to assign value to uninitialised varaible!")
 
     def visit_UnaryOp(self, node: UnaryOp):
         if node.op.type == type.PLUS:
@@ -846,11 +975,11 @@ class Interpreter:
 
     def visit_Var(self, node: Var):
         variable_id = node.id
-        val = self.global_scope.get(variable_id)[1]
+        val = self.global_scope.get(variable_id)
         if val is None:
-            raise NameError(repr(variable_id))
+            raise NameError("Interpreter :: " + repr(variable_id))
         else:
-            return val
+            return val[1]
 
     def visit_Num(self, node: Num):
         return node.id
@@ -870,9 +999,9 @@ class Driver:
     Driver code to execute the program
     """
     def __init__(self,):
-        self.filename = None
+        self.filename: str | None = None
 
-    def execute(self, mode):
+    def run_program(self, mode):
         """
         Calls the relevant function for the given mode
         """
@@ -886,8 +1015,30 @@ class Driver:
         else:
             raise ValueError(f"mode '{repr(mode)}' is not a valid mode.")
 
-    @staticmethod
-    def cmdline_input():
+    def process(self, code: str):
+
+        parser = Parser(code)
+        symbol_table = SymbolTableBuilder()
+        interpreter = Interpreter()
+
+        tree = parser.parse()
+        symbol_table.visit(tree)
+        result = interpreter.interpret(tree)
+
+        if PRINT_TREE:
+            print(tree)
+
+        print()
+        print("Symbol table:")
+        print(symbol_table.symbol_table)
+        print("Globals:")
+        print(interpreter.global_scope)
+        print()
+        print("Result: ")
+        print(result)
+
+
+    def cmdline_input(self):
         """
         Run interpreter in command line interface mode
         """
@@ -902,17 +1053,9 @@ class Driver:
             if not text:
                 continue
 
-            interpreter = Interpreter(text)
-            result = interpreter.interpret()
+            self.process(text)
 
-            print("Globals:")
-            print(interpreter.global_scope)
-            print()
-            print("Result: ")
-            print(result)
-
-    @staticmethod
-    def file_input(filename: str = "./hello.sap"):
+    def file_input(self, filename: str = "./hello.sap"):
         """
         Run interpreter in file mode
         """
@@ -922,17 +1065,10 @@ class Driver:
         if not text:
             return
 
-        interpreter = Interpreter(text)
-        result = interpreter.interpret()
+        self.process(text)
 
-        print("Globals:")
-        print(interpreter.global_scope)
-        print()
-        print("Result: ")
-        print(result)
-
-
+        
 if __name__ == '__main__':
     driver = Driver()
     driver.filename = "./hello.sap"
-    driver.execute(MODE)
+    driver.run_program(MODE)
