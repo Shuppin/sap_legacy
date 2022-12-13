@@ -16,6 +16,13 @@ very_useful_number = (age + x) * pi_const;
 evenMoreUsefulNumber = (age/pi_const);
 
 the_most_useful_number_ever = the_most_useful_number_ever + (age // pi_const);
+{
+    /*
+        Code can also be split into subsections like this.
+        Currently the scope is only global
+    */
+    x = x -1;
+};
 
 /* This is a comment */
 /*

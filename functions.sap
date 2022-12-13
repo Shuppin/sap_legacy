@@ -1,0 +1,21 @@
+int x = 36;
+int y = 12;
+
+int total = x + y;
+
+real very_useful_number = (x + total) * 3.14;
+
+def bob {
+
+    def dave {
+        /* go crazy! */
+        real pi = 3.14;
+    };
+
+    int z = 1;
+}
+
+/*
+    This is a very cool comment.
+    It can also have several lines!
+*/

@@ -13,7 +13,7 @@ MODE = "file"
 
 PRINT_TOKENS = False
 PRINT_EAT_STACK = False
-PRINT_TREE = False
+PRINT_TREE = True
 
 # Since the `type()` function is overwritten,
 # this code allows us to still use the original `type()` function by calling `typeof()`
@@ -42,6 +42,7 @@ class type(Enum):
     LPAREN          = object()
     RPAREN          = object()
     IDENTIFIER      = object()
+    DEFINITION      = object()
     ASSIGN          = object()
     COMMENT         = object()
     SEMI            = object()
@@ -114,7 +115,8 @@ class Lexer:
 
         self.RESERVED_KEYWORDS: dict = {
             'int': type.INTEGER,
-            'real': type.REAL
+            'real': type.REAL,
+            'def': type.DEFINITION
         }
 
     def error(self):
@@ -328,6 +330,18 @@ class Parser:
         else:
             self.error()
 
+    def is_type(self) -> bool:
+        """
+        Check if the current token is a datatype
+        """
+        if self.current_token.type in [
+            type.INTEGER,
+            type.REAL
+        ]:
+            return True
+        else:
+            return False
+
     # Grammar definitions
 
     def program(self) -> Compound:
@@ -352,17 +366,13 @@ class Parser:
         type_spec -> `INTEGER` | `REAL`
         """
         token = self.current_token
-        if token.type == type.INTEGER:
+        if self.is_type():
             if PRINT_EAT_STACK:
                 print("Calling eat() from line", getframeinfo(currentframe()).lineno)
-            self.eat(type.INTEGER)
-        else:
-            if PRINT_EAT_STACK:
-                print("Calling eat() from line", getframeinfo(currentframe()).lineno)
-            self.eat(type.REAL)
+            self.eat(token.type)
+
         node = TypeNode(token)
         return node
-
 
     def compound_statement(self) -> Compound:
         """
@@ -404,43 +414,44 @@ class Parser:
     def statement(self) -> Node:
         """
         statement -> compound_statement
-                   | variable_change
+                   | procedure_declaration
+                   | variable_declaration
+                   | variable_assingment
                    | empty
         """
         if self.current_token.type == type.BEGIN:
             node = self.compound_statement()
+        elif self.current_token.type == type.DEFINITION:
+            node = self.procedure_declaration()
+        elif self.is_type():
+            node = self.variable_declaration()
         elif self.current_token.type == type.IDENTIFIER:
-            node = self.variable_change()
+            node = self.variable_assignment()
         else:
             node = self.empty()
 
         return node
 
-    def variable_change(self) -> VarDecl | AssignOp:
+    def procedure_declaration(self):
         """
-        variable_change -> variable (`COLON` | `ASSIGN`)
+        procedure_declaration -> `DEFINITION` variable compound_statement
         """
-        var_node = self.variable()
-        op_node = self.current_token
-        if op_node.type == type.COLON:
-            node = self.declaration_statement(var_node)
-        else:
-            node = self.assignment_statement(var_node)
+        self.eat(type.DEFINITION)
+        procedure_var = self.variable()
+        body = self.compound_statement()
+        proc_decl = ProcedureDecl(procedure_var, body)
 
-        return node
+        return proc_decl
 
-    def declaration_statement(self, var_node):
+    def variable_declaration(self):
         """
-        declaration_statement -> variable `COLON` type_spec `ASSIGN` expr | variable `COLON` type_spec
+        variable_declaration -> type_spec variable `ASSIGN` expr | type_spec variable
         """
-        colon_op = self.current_token
-        if PRINT_EAT_STACK:
-            print("Calling eat() from line", getframeinfo(currentframe()).lineno)
-        self.eat(type.COLON)
-
         type_node = self.type_spec()
-        
-        # variable `COLON` type_spec `ASSIGN` expr
+
+        var_node = self.variable()
+
+        # type_spec variable `ASSIGN` expr
         if self.current_token.type == type.ASSIGN:
             assign_op = self.current_token
             if PRINT_EAT_STACK:
@@ -448,24 +459,30 @@ class Parser:
             self.eat(type.ASSIGN)
             expr_node = self.expr()
 
-            node = VarDecl(var_node, colon_op, type_node, assign_op, expr_node)
+            node = VarDecl(type_node, var_node, assign_op, expr_node)
         
-        # variable `COLON` type_spec
+        # type_spec variable
         else:
-            node = VarDecl(var_node, colon_op, type_node)
+            node = VarDecl(type_node, var_node)
 
         return node
 
-    def assignment_statement(self, var_node) -> AssignOp:
+    def variable_assignment(self) -> AssignOp:
         """
-        assignment_statement -> variable `ASSIGN` expr
+        variable_assignment -> variable `ASSIGN` expr
         """
-        token = self.current_token
+        var_node = self.current_token
+        if PRINT_EAT_STACK:
+            print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+        self.eat(type.IDENTIFIER)
+
+        assign_op = self.current_token
         if PRINT_EAT_STACK:
             print("Calling eat() from line", getframeinfo(currentframe()).lineno)
         self.eat(type.ASSIGN)
+
         right = self.expr()
-        node = AssignOp(var_node, token, right)
+        node = AssignOp(var_node, assign_op, right)
 
         return node
 
@@ -610,15 +627,17 @@ class Parser:
                         | statement `SEMI` statement_list
 
         statement -> compound_statement
-                   | variable_change
+                   | procedure_declaration
+                   | variable_declaration
+                   | variable_assingment
                    | empty
 
-        variable_change -> variable (`COLON` | `ASSIGN`)
+        procedure_declaration -> `DEFINITION` variable compound_statement
 
-        declaration_statement -> variable `COLON` type_spec `ASSIGN` expr
-                               | variable `COLON` type_spec
+        variable_declaration -> type_spec variable `ASSIGN` expr
+                              | type_spec variable
 
-        assignment_statement -> variable `ASSIGN` expr
+        variable_assignment -> variable `ASSIGN` expr
 
         empty ->
         // What did you expect cuh
@@ -727,12 +746,16 @@ class Compound(Node):
 
 
 class VarDecl(Node):
-    def __init__(self, var_node, colon_op, type_node, assign_op=None, expr_node=None):
-        self.var_node: Var = var_node
-        self.colon_op: Token = colon_op
+    def __init__(self, type_node, var_node, assign_op=None, expr_node=None):
         self.type_node: TypeNode = type_node
+        self.var_node: Var = var_node
         self.assign_op: Token | None = assign_op
         self.expr_node: Node | None = expr_node
+
+class ProcedureDecl(Node):
+    def __init__(self, procedure_name, compound_node):
+        self.procedure_name = procedure_name
+        self.compound_node = compound_node
 
 
 class AssignOp(Node):
@@ -868,6 +891,9 @@ class SymbolTableBuilder(NodeVisitor):
             var_symbol = VarSymbol(var_id, type_symbol)
             self.symbol_table.define(var_symbol)
 
+    def visit_ProcedureDecl(self, node):
+        pass
+
     def visit_AssignOp(self, node: AssignOp):
         var_id = node.left.id
         var_symbol = self.symbol_table.lookup(var_id)
@@ -943,6 +969,9 @@ class Interpreter(NodeVisitor):
             self.global_scope[variable_id] = [variable_type_name, self.visit(node.expr_node)]
         else:
             self.global_scope[variable_id] = [variable_type_name, None]
+
+    def visit_ProcedureDecl(self, node):
+        pass
 
     def visit_AssignOp(self, node: AssignOp):
         variable_id = node.left.id
@@ -1070,5 +1099,5 @@ class Driver:
         
 if __name__ == '__main__':
     driver = Driver()
-    driver.filename = "./hello.sap"
+    driver.filename = "./functions.sap"
     driver.run_program(MODE)
