@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from enum import Enum
 from inspect import currentframe, getframeinfo
+from collections import defaultdict
+from enum import Enum
 
 # Constants
 
@@ -330,6 +331,7 @@ class Parser:
         else:
             self.error()
 
+    # Could be a function native to `Token`
     def is_type(self) -> bool:
         """
         Check if the current token is a datatype
@@ -661,6 +663,7 @@ class Parser:
 
         return node
 
+
 ###########################################
 #                                         #
 #   Node vistor code                      #
@@ -752,6 +755,7 @@ class VarDecl(Node):
         self.assign_op: Token | None = assign_op
         self.expr_node: Node | None = expr_node
 
+
 class ProcedureDecl(Node):
     def __init__(self, procedure_name, compound_node):
         self.procedure_name = procedure_name
@@ -815,9 +819,9 @@ class Symbol:
     """
     Symbol base class
     """
-    def __init__(self, name, datatype = "<builtin>"):
+    def __init__(self, name, datatype=None):
         self.name: str = name
-        self.type: BuiltinSymbol | str = datatype
+        self.type: BuiltinSymbol | None = datatype
 
     def __str__(self):
         return self.name
@@ -831,8 +835,8 @@ class BuiltinSymbol(Symbol):
         super().__init__(name)
 
     def __str__(self):
-        return str(self.type) + " " + str(self.name)
-
+        return f"<builtin> {self.name}"
+        
 
 class VarSymbol(Symbol):
     """
@@ -842,7 +846,7 @@ class VarSymbol(Symbol):
         super().__init__(name, datatype)
     
     def __str__(self):
-        return "<" + str(self.type.name) + "> id: '" + str(self.name) + "'"
+        return f"<variable> (id: '{self.name}', type: '{self.type.name}')"
 
 
 class SymbolTable:
@@ -851,13 +855,31 @@ class SymbolTable:
     """
     def __init__(self):
         self._symbols: dict[str, Symbol] = {}
-        self.define(BuiltinSymbol(type.INTEGER))
-        self.define(BuiltinSymbol(type.REAL))
+        self.define(BuiltinSymbol("INTEGER"))
+        self.define(BuiltinSymbol("REAL"))
 
     def __str__(self):
-        text = ""
-        for _, symbol in sorted(self._symbols.items(), key=lambda x: str(x[1].type)):
-            text += "  " + str(symbol) + "\n"
+        text = "Symbol table:\n\n"
+        symbols = defaultdict(list)
+
+        for _, val in sorted(self._symbols.items()):
+            symbols[val.__class__.__name__].append(val)
+
+        symbols = dict(symbols)
+        builtin_types = symbols.get(BuiltinSymbol.__name__)
+
+        if builtin_types != None:
+            for builtin_type in builtin_types:
+                text += "  " + str(builtin_type) + "\n"
+            text += "\n"
+
+            del symbols[BuiltinSymbol.__name__]
+            
+        for _, symbols in symbols.items():
+            for symbol in symbols:
+                text += "  " + str(symbol) + "\n"
+            text += "\n"
+
         return text
 
     def define(self, symbol: Symbol):
@@ -868,7 +890,7 @@ class SymbolTable:
         return symbol
 
 
-class SymbolTableBuilder(NodeVisitor):
+class SemanticAnalyser(NodeVisitor):
     """
     Constructs the symbol table and performs type-checks before runtime
     """
@@ -881,7 +903,7 @@ class SymbolTableBuilder(NodeVisitor):
 
     def visit_VarDecl(self, node: VarDecl):
         type_id = node.type_node.id
-        type_symbol = self.symbol_table.lookup(type_id)
+        type_symbol = self.symbol_table.lookup(type_id.name)
         var_id = node.var_node.id
 
         if self.symbol_table.lookup(var_id) is not None:
@@ -1047,7 +1069,7 @@ class Driver:
     def process(self, code: str):
 
         parser = Parser(code)
-        symbol_table = SymbolTableBuilder()
+        symbol_table = SemanticAnalyser()
         interpreter = Interpreter()
 
         tree = parser.parse()
@@ -1058,7 +1080,6 @@ class Driver:
             print(tree)
 
         print()
-        print("Symbol table:")
         print(symbol_table.symbol_table)
         print("Globals:")
         print(interpreter.global_scope)
