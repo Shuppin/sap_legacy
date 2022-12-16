@@ -6,9 +6,9 @@ DOESN'T ACTUALLY WORK (yet)
 
 def myfunc(arg1, arg2, kwarg1="hello") -> str {
 
-    condition: bool = True
+    bool condition = True
 
-    if arg1 > arg2 {
+    if (arg1 > arg2) {
 
     }
     elif arg2 > arg1 {
@@ -18,6 +18,8 @@ def myfunc(arg1, arg2, kwarg1="hello") -> str {
         
     }
 
-    while 
+    while condition {
+
+    }
 
 }

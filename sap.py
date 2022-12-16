@@ -346,16 +346,16 @@ class Parser:
 
     # Grammar definitions
 
-    def program(self) -> Compound:
+    def program(self) -> Program:
         """
         program -> (statement_list | compound_statement) <`EOF`>
         """
+        node = Program()
+
         if self.current_token.type == type.BEGIN:
-            node = self.compound_statement()
+            node.statements.append(self.compound_statement())
         else:
-            # Some hackery to get the code to run without surrounding brackets
-            node = Compound()
-            node.children = self.statement_list()
+            node.statements = self.statement_list()
 
         if PRINT_EAT_STACK:
             print("Calling eat() from line", getframeinfo(currentframe()).lineno)
@@ -743,6 +743,11 @@ INTERIOR NODES
 (in order of precedence)
 """
 
+class Program(Node):
+    def __init__(self):
+        self.statements: list[Node] = []
+
+
 class Compound(Node):
     def __init__(self):
         self.children: list[Node] = []
@@ -897,6 +902,10 @@ class SemanticAnalyser(NodeVisitor):
     def __init__(self):
         self.symbol_table: SymbolTable = SymbolTable()
 
+    def visit_Program(self, node: Program):
+        for child in node.statements:
+            self.visit(child)
+
     def visit_Compound(self, node: Compound):
         for child in node.children:
             self.visit(child)
@@ -975,6 +984,10 @@ class Interpreter(NodeVisitor):
         and executes the code.
         """
         return self.visit(tree)
+
+    def visit_Program(self, node: Program):
+        for child in node.statements:
+            self.visit(child)
 
     def visit_Compound(self, node: Compound):
         for child in node.children:
@@ -1073,11 +1086,12 @@ class Driver:
         interpreter = Interpreter()
 
         tree = parser.parse()
-        symbol_table.visit(tree)
-        result = interpreter.interpret(tree)
 
         if PRINT_TREE:
             print(tree)
+
+        symbol_table.visit(tree)
+        result = interpreter.interpret(tree)
 
         print()
         print(symbol_table.symbol_table)
@@ -1086,7 +1100,6 @@ class Driver:
         print()
         print("Result: ")
         print(result)
-
 
     def cmdline_input(self):
         """
