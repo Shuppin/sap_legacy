@@ -12,9 +12,10 @@ from enum import Enum
 
 MODE = "file"
 
-PRINT_TOKENS = False
+PRINT_TOKENS = True
 PRINT_EAT_STACK = False
 PRINT_TREE = True
+PRINT_SCOPE = True
 
 # Since the `type()` function is overwritten,
 # this code allows us to still use the original `type()` function by calling `typeof()`
@@ -40,6 +41,7 @@ class type(Enum):
     FLOAT_DIV       = object()
     PLUS            = object()
     MINUS           = object()
+    RETURNS_OP      = object()
     LPAREN          = object()
     RPAREN          = object()
     IDENTIFIER      = object()
@@ -48,6 +50,7 @@ class type(Enum):
     COMMENT         = object()
     SEMI            = object()
     COLON           = object()
+    COMMA           = object()
     BEGIN           = object()
     END             = object()
     EOF             = object()
@@ -161,12 +164,17 @@ class Lexer:
         while self.current_char is not None and self.current_char == " ":
             self.advance()
 
-    def skip_comment(self):
+    def skip_multi_comment(self):
         """Advances `self.pos` until a comment terminator (*/) has been reached"""
         while not (self.current_char == "*" and self.peek() == "/"):
             self.advance()
         # Advance twice more to skip over the final "*/"
         self.advance()
+        self.advance()
+
+    def skip_comment(self):
+        while self.current_char is not None and not self.current_char == "\n":
+            self.advance()
         self.advance()
 
     def number(self) -> Token:
@@ -213,6 +221,10 @@ class Lexer:
                 continue
 
             elif self.current_char == "/" and self.peek() == "*":
+                self.skip_multi_comment()
+                continue
+
+            elif self.current_char == "/" and self.peek() == "/":
                 self.skip_comment()
                 continue
 
@@ -240,9 +252,10 @@ class Lexer:
 
                 if self.peek() != "/":
                     token = Token(self.pos, type.FLOAT_DIV, self.current_char)
-                else:
-                    token = Token(self.pos, type.INTEGER_DIV, self.current_char)
-                    self.advance()
+                # Disabled in place of commas
+                #else:
+                #    token = Token(self.pos, type.INTEGER_DIV, self.current_char)
+                #    self.advance()
 
                 self.advance()
 
@@ -254,8 +267,14 @@ class Lexer:
                 return token
 
             elif self.current_char == '-':
-                token = Token(self.pos, type.MINUS, self.current_char)
-                self.advance()
+                if self.peek() == ">":
+                    token = Token(self.pos, type.RETURNS_OP, self.current_char)
+                    self.advance()
+                    self.advance()
+                else:
+                    token = Token(self.pos, type.MINUS, self.current_char)
+                    self.advance()
+                
                 return token
 
             # Symbols
@@ -267,6 +286,11 @@ class Lexer:
 
             elif self.current_char == ":":
                 token = Token(self.pos, type.COLON, self.current_char)
+                self.advance()
+                return token
+
+            elif self.current_char == ",":
+                token = Token(self.pos, type.COMMA, self.current_char)
                 self.advance()
                 return token
 
@@ -372,6 +396,8 @@ class Parser:
             if PRINT_EAT_STACK:
                 print("Calling eat() from line", getframeinfo(currentframe()).lineno)
             self.eat(token.type)
+        else:
+            self.error()
 
         node = TypeNode(token)
         return node
@@ -434,20 +460,89 @@ class Parser:
 
         return node
 
-    def procedure_declaration(self):
+    def formal_parameter_list(self) -> list[Param]:
         """
-        procedure_declaration -> `DEFINITION` variable compound_statement
+        formal_parameter_list -> formal_parameter | empty | formal_parameter `COMMA` formal_parameter_list
         """
+        if self.current_token.type == type.RPAREN:
+            results = []
+
+        else:
+            node = self.formal_parameter()
+
+            results = [node]
+
+            while self.current_token.type == type.COMMA:
+                if PRINT_EAT_STACK:
+                    print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+                self.eat(type.COMMA)
+                results.append(self.formal_parameter())
+
+            if self.current_token.type == type.IDENTIFIER:
+                self.error()
+
+        return results
+
+    def formal_parameter(self) -> Param:
+        """
+        formal_parameter -> type_spec variable
+        """
+        type_node = self.type_spec()
+        var_node = self.variable()
+
+        param_node = Param(var_node, type_node)
+
+        return param_node
+
+    def procedure_declaration(self) -> ProcedureDecl:
+        """
+        procedure_declaration -> `DEFINITION` variable `LPAREN` formal_parameter_list `RPAREN` compound_statement
+                               | `DEFINITION` variable `LPAREN` formal_parameter_list `RPAREN` `RETURNS_OP` type_spec compound_statement  
+        """
+        if PRINT_EAT_STACK:
+            print("Calling eat() from line", getframeinfo(currentframe()).lineno)
         self.eat(type.DEFINITION)
+
         procedure_var = self.variable()
-        body = self.compound_statement()
-        proc_decl = ProcedureDecl(procedure_var, body)
+
+        if PRINT_EAT_STACK:
+            print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+        self.eat(type.LPAREN)
+
+        params = self.formal_parameter_list()
+
+        if PRINT_EAT_STACK:
+            print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+        self.eat(type.RPAREN)
+
+        if self.current_token.type == type.BEGIN:
+
+            body = self.compound_statement()
+
+            proc_decl = ProcedureDecl(procedure_var, params, body)
+
+        elif self.current_token.type == type.RETURNS_OP:
+            
+            if PRINT_EAT_STACK:
+                print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+            self.eat(type.RETURNS_OP)
+
+            return_type = self.type_spec()
+
+            body = self.compound_statement()
+
+            proc_decl = ProcedureDecl(procedure_var, params, body, return_type=return_type)
+
+        else:
+            self.error()
 
         return proc_decl
 
-    def variable_declaration(self):
+    def variable_declaration(self) -> VarDecl | Compound:
         """
-        variable_declaration -> type_spec variable `ASSIGN` expr | type_spec variable
+        variable_declaration -> type_spec variable `ASSIGN` expr
+                              | type_spec variable (`COMMA` variable)*
+
         """
         type_node = self.type_spec()
 
@@ -463,11 +558,17 @@ class Parser:
 
             node = VarDecl(type_node, var_node, assign_op, expr_node)
         
-        # type_spec variable
+        # type_spec variable (`COMMA` variable)*
         else:
-            node = VarDecl(type_node, var_node)
+            node = Compound()
+            node.children.append(VarDecl(type_node, var_node))
+            while self.current_token.type == type.COMMA:
+                self.eat(type.COMMA)
+                var_node = self.variable()
+                node.children.append(VarDecl(type_node, var_node))
 
         return node
+
 
     def variable_assignment(self) -> AssignOp:
         """
@@ -634,10 +735,16 @@ class Parser:
                    | variable_assingment
                    | empty
 
-        procedure_declaration -> `DEFINITION` variable compound_statement
+        formal_parameter_list -> formal_parameter
+                               | empty
+                               | formal_parameter `COMMA` formal_parameter_list
+
+        formal_parameter -> type_spec variable
+
+        procedure_declaration -> `DEFINITION` variable `LPAREN` formal_parameter_list `RPAREN` compound_statement
 
         variable_declaration -> type_spec variable `ASSIGN` expr
-                              | type_spec variable
+                              | type_spec variable (`COMMA` variable)*
 
         variable_assignment -> variable `ASSIGN` expr
 
@@ -666,7 +773,7 @@ class Parser:
 
 ###########################################
 #                                         #
-#   Node vistor code                      #
+#   Node visitor code                     #
 #                                         #
 ###########################################
 
@@ -724,9 +831,12 @@ class Node:
             elif isinstance(value, list):
                 text += "   " * depth + str(key) + ": [\n"
                 for node in value:
-                    text += "   " * (depth + 1) + node.__class__.__name__ + "(\n"
-                    text += self._print_children(node.__dict__, depth + 2)
-                    text += "   " * (depth + 1) + "),\n"
+                    if isinstance(node, Node):
+                        text += "   " * (depth + 1) + node.__class__.__name__ + "(\n"
+                        text += self._print_children(node.__dict__, depth + 2)
+                        text += "   " * (depth + 1) + "),\n"
+                    else:
+                        raise TypeError(f"Cannot print type '{typeof(node)}'")
                 text += "   " * depth + "],\n"
 
             else:
@@ -762,10 +872,12 @@ class VarDecl(Node):
 
 
 class ProcedureDecl(Node):
-    def __init__(self, procedure_name, compound_node):
-        self.procedure_name = procedure_name
-        self.compound_node = compound_node
-
+    def __init__(self, procedure_var, params, compound_node, return_type=None):
+        self.procedure_var: Var = procedure_var
+        self.params: list[Param] = params
+        self.return_type: TypeNode | None = return_type
+        self.compound_node: Compound = compound_node
+        
 
 class AssignOp(Node):
     def __init__(self, left, op, right):
@@ -786,6 +898,11 @@ class BinOp(Node):
         self.op: Token = op
         self.right: Node = right
 
+class Param(Node):
+    def __init__(self, var_node, type_node):
+        self.var_node: Var = var_node
+        self.type_node: TypeNode = type_node
+
 
 """
 LEAF NODES
@@ -795,7 +912,7 @@ LEAF NODES
 class TypeNode(Node):
     def __init__(self, token):
         self.token: Token = token
-        self.id = self.token.type
+        self.id = self.token.type.name
 
 
 class Var(Node):
@@ -854,17 +971,39 @@ class VarSymbol(Symbol):
         return f"<variable> (id: '{self.name}', type: '{self.type.name}')"
 
 
+class ProdcedureSymbol(Symbol):
+    def __init__(self, name, params=[]):
+        super().__init__(name)
+        self.params: list[Param] = params
+
+    def __str__(self):
+        if len(self.params) == 0:
+            return f"<procedure> (id: '{self.name}', parameters: <no params>)"
+        else:        
+            return f"<procedure> (id: '{self.name}', parameters: {', '.join(list(map(lambda param: f'({param.var_node.id}, <{param.type_node.id}>)', self.params)))})"
+
+
 class SymbolTable:
     """
     Class to store all the program symbols
     """
-    def __init__(self):
+    def __init__(self, scope_name, scope_level, parent_scope=None):
         self._symbols: dict[str, Symbol] = {}
-        self.define(BuiltinSymbol("INTEGER"))
-        self.define(BuiltinSymbol("REAL"))
+        self.scope_name: str = scope_name
+        self.scope_level: int = scope_level
+        self.parent_scope: SymbolTable | None = parent_scope
+
+        if self.scope_level == 0:
+            self.define(BuiltinSymbol("INTEGER"))
+            self.define(BuiltinSymbol("REAL"))
 
     def __str__(self):
-        text = "Symbol table:\n\n"
+        text = "\nSCOPE (SCOPED SYMBOL TABLE):\n"
+        text += f"Scope name    : {self.scope_name}\n"
+        text += f"Scope level   : {self.scope_level}\n"
+        text += f"Parent scope  : {self.parent_scope.scope_name if self.parent_scope else '<none>'}\n\n"
+        text += "Scope symbol table contents\n"
+        text += "---------------------------\n\n"
         symbols = defaultdict(list)
 
         for _, val in sorted(self._symbols.items()):
@@ -885,14 +1024,30 @@ class SymbolTable:
                 text += "  " + str(symbol) + "\n"
             text += "\n"
 
+        # Simple code to add bars around the top and bottom of the string,
+        # according to the longest line in the string.
+        text = text.split("\n")
+        del text[-1]
+        longest_string_length = len(max(text, key=len))
+        text.insert(2, "="*(longest_string_length+1))
+        text.append("="*(longest_string_length+1) + "\n")
+        text = "\n".join(text)
+
         return text
 
     def define(self, symbol: Symbol):
         self._symbols[symbol.name] = symbol
 
-    def lookup(self, name: str) -> Symbol | None:
+    def lookup(self, name: str, search_parent_scopes: bool=True) -> Symbol | None:
         symbol = self._symbols.get(name)
-        return symbol
+        if symbol is not None:
+            return symbol
+
+        # Recursively search up the scopes to find symbols
+        if self.parent_scope is not None and search_parent_scopes:
+            return self.parent_scope.lookup(name)
+        else:
+            return None
 
 
 class SemanticAnalyser(NodeVisitor):
@@ -900,34 +1055,74 @@ class SemanticAnalyser(NodeVisitor):
     Constructs the symbol table and performs type-checks before runtime
     """
     def __init__(self):
-        self.symbol_table: SymbolTable = SymbolTable()
+        self.current_scope: SymbolTable | None = None
 
     def visit_Program(self, node: Program):
+        builtin_scope = SymbolTable(scope_name="<builtins>", scope_level=0)
+        global_scope = SymbolTable(scope_name="<global>", scope_level=1, parent_scope=builtin_scope)
+        self.current_scope = global_scope
+
+        if PRINT_SCOPE:
+            print(builtin_scope)
+
         for child in node.statements:
             self.visit(child)
 
+        if PRINT_SCOPE:
+            print(global_scope)
+
+        # Return to global scope
+        self.current_scope = global_scope
+
     def visit_Compound(self, node: Compound):
+        # TODO: Implement scoping around compound statements
         for child in node.children:
             self.visit(child)
 
     def visit_VarDecl(self, node: VarDecl):
-        type_id = node.type_node.id
-        type_symbol = self.symbol_table.lookup(type_id.name)
+        type_symbol = self.visit(node.type_node)
+
         var_id = node.var_node.id
 
-        if self.symbol_table.lookup(var_id) is not None:
-            raise ValueError("TypeChecker :: Attempted to intialise variable with same name!")
+        if self.current_scope.lookup(var_id, search_parent_scopes=False) is not None:
+            raise NameError("TypeChecker :: Attempted to intialise variable with same name!")
+        
+        var_symbol = VarSymbol(var_id, type_symbol)
+        self.current_scope.define(var_symbol)
 
-        else:
-            var_symbol = VarSymbol(var_id, type_symbol)
-            self.symbol_table.define(var_symbol)
+        if node.expr_node is not None:
+            self.visit(node.expr_node)
 
-    def visit_ProcedureDecl(self, node):
-        pass
+    def visit_ProcedureDecl(self, node: ProcedureDecl):
+        proc_name = node.procedure_var.id
+        proc_params: list[Param] = node.params
+
+        if self.current_scope.lookup(proc_name) is not None:
+            raise NameError("TypeChecker :: Attempted to declare procedure with same name!")
+
+        proc_symbol = ProdcedureSymbol(proc_name, proc_params)
+        self.current_scope.define(proc_symbol)
+
+        proc_scope = SymbolTable(scope_name=proc_name, scope_level=self.current_scope.scope_level+1, parent_scope=self.current_scope)
+        self.current_scope = proc_scope
+
+        for param in proc_params:
+            param_type = self.current_scope.lookup(param.type_node.id)
+            param_name = param.var_node.id
+            var_symbol = VarSymbol(param_name, param_type)
+            self.current_scope.define(var_symbol)
+
+        self.visit(node.compound_node)
+
+        if PRINT_SCOPE:
+            print(self.current_scope)
+
+        # Return to parent scope
+        self.current_scope = self.current_scope.parent_scope
 
     def visit_AssignOp(self, node: AssignOp):
         var_id = node.left.id
-        var_symbol = self.symbol_table.lookup(var_id)
+        var_symbol = self.current_scope.lookup(var_id)
 
         if var_symbol is None:
             raise NameError(f"TypeChecker :: Attempted to assign value to uninitialised varaible {repr(var_id)}!")
@@ -941,15 +1136,23 @@ class SemanticAnalyser(NodeVisitor):
         self.visit(node.left)
         self.visit(node.right)
 
-    def visit_TypeNode(self, node):
-        pass
+    def visit_TypeNode(self, node: TypeNode):
+        type_id = node.id
+        type_symbol = self.current_scope.lookup(type_id)
+
+        if type_symbol is None:
+            raise NameError(f"TypeChecker :: Unrecognised type {repr(type_id)}")
+        else:
+            return type_symbol
 
     def visit_Var(self, node: Var):
         var_id = node.id
-        var_symbol = self.symbol_table.lookup(var_id)
+        var_symbol = self.current_scope.lookup(var_id)
 
         if var_symbol is None:
             raise NameError(f"TypeChecker :: Attempted to use uninitialised value {repr(var_id)}")
+        else:
+            return var_symbol
 
     def visit_Num(self, node):
         pass
@@ -995,10 +1198,7 @@ class Interpreter(NodeVisitor):
 
     def visit_VarDecl(self, node: VarDecl):
         variable_id = node.var_node.id
-        variable_type_name = node.type_node.id.name
-
-        if variable_id in self.global_scope: 
-            raise ValueError("Interpreter :: Attempted to intialise variable with same name!")
+        variable_type_name = node.type_node.id
 
         if node.expr_node is not None:
             self.global_scope[variable_id] = [variable_type_name, self.visit(node.expr_node)]
@@ -1091,15 +1291,12 @@ class Driver:
             print(tree)
 
         symbol_table.visit(tree)
-        result = interpreter.interpret(tree)
+        interpreter.interpret(tree)
 
         print()
-        print(symbol_table.symbol_table)
-        print("Globals:")
+        print("Global vars (doesn't account for functions):")
         print(interpreter.global_scope)
         print()
-        print("Result: ")
-        print(result)
 
     def cmdline_input(self):
         """
@@ -1133,5 +1330,5 @@ class Driver:
         
 if __name__ == '__main__':
     driver = Driver()
-    driver.filename = "./functions.sap"
+    driver.filename = "./syntax_showcase.sap"
     driver.run_program(MODE)

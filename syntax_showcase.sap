@@ -1,25 +1,80 @@
-JUST TO GET AN IDEA OF SYNTAX
-DOESN'T ACTUALLY WORK (yet) 
+/*
+    Multi-line
+    comments!
+*/
 
+/* Current datatypes are:
+    real
+    int
+*/
 
-/* hello! */
+// Declarations
+real b, x, y;
+int z;
 
-def myfunc(arg1, arg2, kwarg1="hello") -> str {
+// Assigment declarations
+real pi = 3.14;
 
-    bool condition = True
+// Assigments
+z = 6;
+x = 5;
+b = z;
 
-    if (arg1 > arg2) {
+// Note, variables must contain a number value to perfom operations
+// Operators
+x = x + z;
+x = x - z;
+x = x * z;
+x = x / z;
 
-    }
-    elif arg2 > arg1 {
+// Brackets
+x = ((x+3) / (z-1))*4;
 
-    }
-    else {
-        
-    }
+// Unary operations
+x = -x;
+x = +x;
+x = --x;
+x = +++++++----x; // Unary operations are stackable
 
-    while condition {
+// Compound statements
+// Currently only acts as grouped code, remains in current scope
+{
+    y = z + x / b * pi
+};
 
-    }
+// Functions
+def AlphaA(int a) {
+    int b;
 
-}
+    // Nested functions
+    def Beta(int c) {
+        int y;
+
+        def Gamma(int c) {
+            int x;
+            x = a + b + c + x + y + z;
+        };
+    };
+};
+
+// Function with return type
+def AlphaB(int a) -> int {
+    real c;
+    c = a + b;
+};
+
+// Funciton without arguments
+def empty_func() {
+
+};
+
+/* Scope diagram:
+    <global> -------
+     /     \        \
+    /       \        \
+ AlphaA   AlphaB   empty_func
+   |
+ Beta
+   |
+ Gamma  
+*/
