@@ -28,7 +28,7 @@ x = x * z;
 x = x / z;
 
 // Brackets
-x = ((x+3) / (z-1))*4;
+x = /* wow */ ((x+3) / (z-1))*4;
 
 // Unary operations
 x = -x;
@@ -39,7 +39,7 @@ x = +++++++----x; // Unary operations are stackable
 // Compound statements
 // Currently only acts as grouped code, remains in current scope
 {
-    y = z + x / b * pi
+    y = z + x / b * pi;
 };
 
 // Functions
@@ -63,7 +63,7 @@ def AlphaB(int a) -> int {
     c = a + b;
 };
 
-// Funciton without arguments
+// Function without arguments
 def empty_func() {
 
 };

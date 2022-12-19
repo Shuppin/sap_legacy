@@ -4,6 +4,8 @@ from inspect import currentframe, getframeinfo
 from collections import defaultdict
 from enum import Enum
 
+import sys, os
+
 # Constants
 
 # Modes:
@@ -12,10 +14,12 @@ from enum import Enum
 
 MODE = "file"
 
-PRINT_TOKENS = True
+DEFAULT_FILENAME = "hello.sap"
+
+PRINT_TOKENS = False
 PRINT_EAT_STACK = False
-PRINT_TREE = True
-PRINT_SCOPE = True
+PRINT_TREE = False
+PRINT_SCOPE = False
 
 # Since the `type()` function is overwritten,
 # this code allows us to still use the original `type()` function by calling `typeof()`
@@ -167,7 +171,10 @@ class Lexer:
     def skip_multi_comment(self):
         """Advances `self.pos` until a comment terminator (*/) has been reached"""
         while not (self.current_char == "*" and self.peek() == "/"):
-            self.advance()
+            if self.current_char == "\n":
+                self.newline()
+            else:
+                self.advance()
         # Advance twice more to skip over the final "*/"
         self.advance()
         self.advance()
@@ -175,6 +182,12 @@ class Lexer:
     def skip_comment(self):
         while self.current_char is not None and not self.current_char == "\n":
             self.advance()
+        self.newline()
+
+    def newline(self):
+        self.lineno += 1
+        print("Newline, lineno:", self.lineno)
+        self.linepos = 0
         self.advance()
 
     def number(self) -> Token:
@@ -211,9 +224,7 @@ class Lexer:
             # Ignored characters
 
             if self.current_char == "\n":
-                self.lineno += 1
-                self.linepos = 0
-                self.advance()
+                self.newline()
                 continue
 
             elif self.current_char == " ":
@@ -422,20 +433,27 @@ class Parser:
 
     def statement_list(self) -> list[Node]:
         """
-        statement_list -> statement | statement `SEMI` statement_list
+        statement_list -> statement `SEMI` | statement `SEMI` statement_list | empty
         """
         node = self.statement()
 
         results = [node]
 
-        while self.current_token.type == type.SEMI:
-            if PRINT_EAT_STACK:
-                print("Calling eat() from line", getframeinfo(currentframe()).lineno)
-            self.eat(type.SEMI)
-            results.append(self.statement())
+        if not isinstance(node, NoOp):
 
-        if self.current_token.type == type.IDENTIFIER:
-            self.error()
+            while self.current_token.type == type.SEMI:
+                if PRINT_EAT_STACK:
+                    print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+                self.eat(type.SEMI)
+                results.append(self.statement())
+
+            if not isinstance(results[-1], NoOp):
+                if PRINT_EAT_STACK:
+                    print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+                self.eat(type.SEMI)
+
+            if self.current_token.type == type.IDENTIFIER:
+                self.error()
 
         return results
         
@@ -445,7 +463,6 @@ class Parser:
                    | procedure_declaration
                    | variable_declaration
                    | variable_assingment
-                   | empty
         """
         if self.current_token.type == type.BEGIN:
             node = self.compound_statement()
@@ -457,7 +474,6 @@ class Parser:
             node = self.variable_assignment()
         else:
             node = self.empty()
-
         return node
 
     def formal_parameter_list(self) -> list[Param]:
@@ -726,14 +742,14 @@ class Parser:
 
         compound_statement -> `BEGIN` statement_list `END`
 
-        statement_list -> statement
+        statement_list -> statement `SEMI`
                         | statement `SEMI` statement_list
+                        | empty
 
         statement -> compound_statement
                    | procedure_declaration
                    | variable_declaration
                    | variable_assingment
-                   | empty
 
         formal_parameter_list -> formal_parameter
                                | empty
@@ -1262,22 +1278,35 @@ class Driver:
     """
     Driver code to execute the program
     """
-    def __init__(self,):
-        self.filename: str | None = None
+    def __init__(self):
+        self.filename: str = DEFAULT_FILENAME
+        self.mode: str = "cmdline"
 
-    def run_program(self, mode):
+    def run_program(self):
         """
         Calls the relevant function for the given mode
         """
-        if mode == "cmdline":
+        self.process_arguments()
+        if self.mode == "cmdline":
             self.cmdline_input()
-        elif mode == "file":
-            if self.filename is not None:
-                self.file_input(self.filename)
-            else:
-                self.file_input()
+        elif self.mode == "file":
+            self.file_input(self.filename)
         else:
-            raise ValueError(f"mode '{repr(mode)}' is not a valid mode.")
+            raise ValueError(f"mode {repr(self.mode)} is not a valid mode.")
+
+    def process_arguments(self):
+        if len(sys.argv) == 1:
+            #self.mode = "cmdline"
+            # NOTE: cmdline disabled while testing to make execution quicker
+            self.filename = DEFAULT_FILENAME
+            self.mode = "file"
+        elif len(sys.argv) == 2:
+            path = sys.argv[1]
+            if os.path.exists(path) and os.path.isfile(path):
+                self.filename = path
+                self.mode = "file"
+        else:
+            raise Exception("Unrecognised arguments!")
 
     def process(self, code: str):
 
@@ -1315,7 +1344,7 @@ class Driver:
 
             self.process(text)
 
-    def file_input(self, filename: str = "./hello.sap"):
+    def file_input(self, filename: str):
         """
         Run interpreter in file mode
         """
@@ -1330,5 +1359,4 @@ class Driver:
         
 if __name__ == '__main__':
     driver = Driver()
-    driver.filename = "./syntax_showcase.sap"
-    driver.run_program(MODE)
+    driver.run_program()
