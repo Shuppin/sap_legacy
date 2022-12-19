@@ -2,29 +2,26 @@ from __future__ import annotations
 
 from inspect import currentframe, getframeinfo
 from collections import defaultdict
+from typing import Any
 from enum import Enum
 
 import sys, os
 
 # Constants
 
-# Modes:
-# "cmdline"
-# "file"
-
+# The valid modes are: "file" or "cmdline"
 MODE = "file"
 
-DEFAULT_FILENAME = "hello.sap"
+DEFAULT_FILENAME = "syntax_showcase.sap"
 
-PRINT_TOKENS = False
+PRINT_TOKENS = True
 PRINT_EAT_STACK = False
-PRINT_TREE = False
-PRINT_SCOPE = False
+PRINT_TREE = True
+PRINT_SCOPE = True
 
 # Since the `type()` function is overwritten,
 # this code allows us to still use the original `type()` function by calling `typeof()`
 typeof = type
-
 
 ###########################################
 #                                         #
@@ -109,9 +106,9 @@ class Lexer:
 
     The lexer will generate:
     ```
-    Token[type = type.INTEGER_CONST, id = '2', startPos = 0]
-    Token[type = type.PLUS, id = '+', startPos = 1]
-    Token[type = type.INTEGER_CONST, id = '2', startPos = 2]
+    Token[type = type.INTEGER_CONST, id = '2', start_pos = 0]
+    Token[type = type.PLUS, id = '+', start_pos = 2]
+    Token[type = type.INTEGER_CONST, id = '2', start_pos = 4]
     ```
     """
     def __init__(self, text):
@@ -126,6 +123,8 @@ class Lexer:
             'real': type.REAL,
             'def': type.DEFINITION
         }
+
+    # Utility functions
 
     def error(self):
         raise Exception(f'Lexer :: Error parsing input on line {self.lineno}, pos {self.linepos}\n')
@@ -147,7 +146,38 @@ class Lexer:
         else:
             return self.text[peek_pos]
 
-    def _identifier(self) -> Token:
+    # Lexer functions
+
+    def skip_whitespace(self):
+        """Advances `self.pos` until a non-whitespace character has been reached"""
+        while self.current_char is not None and self.current_char == " ":
+            self.advance()
+
+    def skip_multi_comment(self):
+        """Advances `self.pos` until a comment terminator (*/) has been reached"""
+        while not (self.current_char == "*" and self.peek() == "/"):
+            if self.current_char == "\n":
+                # We still want to count newlines
+                self.newline()
+            else:
+                self.advance()
+        # Advance twice more to skip over the final "*/"
+        self.advance()
+        self.advance()
+
+    def skip_comment(self):
+        """Advances `self.pos` until a newline has been reached"""
+        while self.current_char is not None and not self.current_char == "\n":
+            self.advance()
+        self.newline()
+
+    def newline(self):
+        """Increments `self.lineno` and resets `self.linepos`"""
+        self.lineno += 1
+        self.linepos = 0
+        self.advance()
+
+    def identifier(self) -> Token:
         """Creates and returns an identifier token"""
         result = ""
         start_position = self.pos
@@ -162,33 +192,6 @@ class Lexer:
         token = Token(start_position, token_type, result)
 
         return token
-
-    def skip_whitespace(self):
-        """Advances `self.pos` until a non-whitespace character has been reached"""
-        while self.current_char is not None and self.current_char == " ":
-            self.advance()
-
-    def skip_multi_comment(self):
-        """Advances `self.pos` until a comment terminator (*/) has been reached"""
-        while not (self.current_char == "*" and self.peek() == "/"):
-            if self.current_char == "\n":
-                self.newline()
-            else:
-                self.advance()
-        # Advance twice more to skip over the final "*/"
-        self.advance()
-        self.advance()
-
-    def skip_comment(self):
-        while self.current_char is not None and not self.current_char == "\n":
-            self.advance()
-        self.newline()
-
-    def newline(self):
-        self.lineno += 1
-        print("Newline, lineno:", self.lineno)
-        self.linepos = 0
-        self.advance()
 
     def number(self) -> Token:
         """Consumes a number from the input code and returns it"""
@@ -242,7 +245,7 @@ class Lexer:
             # Terminals
 
             if self.current_char.isalpha() or self.current_char == "_":
-                return self._identifier()
+                return self.identifier()
 
             elif self.current_char.isdigit():
                 return self.number()
@@ -263,7 +266,7 @@ class Lexer:
 
                 if self.peek() != "/":
                     token = Token(self.pos, type.FLOAT_DIV, self.current_char)
-                # Disabled in place of commas
+                # Disabled in place of comments
                 #else:
                 #    token = Token(self.pos, type.INTEGER_DIV, self.current_char)
                 #    self.advance()
@@ -342,6 +345,32 @@ class Parser:
 
     The class is responsible for parsing the tokens and turning them into syntax trees.
     These trees make it easier to process the code and understand the relationships between tokens.
+
+    For example give the set of tokens (equivalent to `1 + 1`):
+    ```
+    Token[type = type.INTEGER_CONST, id = '2', start_pos = 0]
+    Token[type = type.PLUS, id = '+', start_pos = 2]
+    Token[type = type.INTEGER_CONST, id = '2', start_pos = 4]
+    ```
+
+    The parser will generate:
+    ```
+    Program(
+        statements: [
+            BinOp(
+                left: Num(
+                    token: Token[type = type.INTEGER_CONST, id = '1', start_pos = 0],
+                    id: 1
+                ),
+                op: Token[type = type.PLUS, id = '+', start_pos = 2],
+                right: Num(
+                    token: Token[type = type.INTEGER_CONST, id = '2', start_pos = 4],
+                    id: 2
+                )
+            )
+        ]
+    )
+    ```
     """
 
     def __init__(self, text):
@@ -383,14 +412,11 @@ class Parser:
 
     def program(self) -> Program:
         """
-        program -> (statement_list | compound_statement) <`EOF`>
+        program -> statement_list <`EOF`>
         """
         node = Program()
 
-        if self.current_token.type == type.BEGIN:
-            node.statements.append(self.compound_statement())
-        else:
-            node.statements = self.statement_list()
+        node.statements = self.statement_list()
 
         if PRINT_EAT_STACK:
             print("Calling eat() from line", getframeinfo(currentframe()).lineno)
@@ -398,42 +424,11 @@ class Parser:
 
         return node
 
-    def type_spec(self) -> TypeNode:
-        """
-        type_spec -> `INTEGER` | `REAL`
-        """
-        token = self.current_token
-        if self.is_type():
-            if PRINT_EAT_STACK:
-                print("Calling eat() from line", getframeinfo(currentframe()).lineno)
-            self.eat(token.type)
-        else:
-            self.error()
-
-        node = TypeNode(token)
-        return node
-
-    def compound_statement(self) -> Compound:
-        """
-        compound_statement -> `BEGIN` statement_list `END`
-        """
-        if PRINT_EAT_STACK:
-            print("Calling eat() from line", getframeinfo(currentframe()).lineno)
-        self.eat(type.BEGIN)
-        nodes = self.statement_list()
-        if PRINT_EAT_STACK:
-            print("Calling eat() from line", getframeinfo(currentframe()).lineno)
-        self.eat(type.END)
-
-        root = Compound()
-        for node in nodes:
-            root.children.append(node)
-
-        return root
-
     def statement_list(self) -> list[Node]:
         """
-        statement_list -> statement `SEMI` | statement `SEMI` statement_list | empty
+        statement_list -> statement `SEMI`
+                        | statement `SEMI` statement_list
+                        | empty
         """
         node = self.statement()
 
@@ -476,44 +471,28 @@ class Parser:
             node = self.empty()
         return node
 
-    def formal_parameter_list(self) -> list[Param]:
+    def compound_statement(self) -> Compound:
         """
-        formal_parameter_list -> formal_parameter | empty | formal_parameter `COMMA` formal_parameter_list
+        compound_statement -> `BEGIN` statement_list `END`
         """
-        if self.current_token.type == type.RPAREN:
-            results = []
+        if PRINT_EAT_STACK:
+            print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+        self.eat(type.BEGIN)
+        nodes = self.statement_list()
+        if PRINT_EAT_STACK:
+            print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+        self.eat(type.END)
 
-        else:
-            node = self.formal_parameter()
+        root = Compound()
+        for node in nodes:
+            root.children.append(node)
 
-            results = [node]
-
-            while self.current_token.type == type.COMMA:
-                if PRINT_EAT_STACK:
-                    print("Calling eat() from line", getframeinfo(currentframe()).lineno)
-                self.eat(type.COMMA)
-                results.append(self.formal_parameter())
-
-            if self.current_token.type == type.IDENTIFIER:
-                self.error()
-
-        return results
-
-    def formal_parameter(self) -> Param:
-        """
-        formal_parameter -> type_spec variable
-        """
-        type_node = self.type_spec()
-        var_node = self.variable()
-
-        param_node = Param(var_node, type_node)
-
-        return param_node
+        return root
 
     def procedure_declaration(self) -> ProcedureDecl:
         """
         procedure_declaration -> `DEFINITION` variable `LPAREN` formal_parameter_list `RPAREN` compound_statement
-                               | `DEFINITION` variable `LPAREN` formal_parameter_list `RPAREN` `RETURNS_OP` type_spec compound_statement  
+                               | `DEFINITION` variable `LPAREN` formal_parameter_list `RPAREN` `RETURNS_OP` type_spec compound_statement
         """
         if PRINT_EAT_STACK:
             print("Calling eat() from line", getframeinfo(currentframe()).lineno)
@@ -585,7 +564,6 @@ class Parser:
 
         return node
 
-
     def variable_assignment(self) -> AssignOp:
         """
         variable_assignment -> variable `ASSIGN` expr
@@ -603,6 +581,57 @@ class Parser:
         right = self.expr()
         node = AssignOp(var_node, assign_op, right)
 
+        return node
+
+    def formal_parameter_list(self) -> list[Param]:
+        """
+        formal_parameter_list -> formal_parameter
+                               | formal_parameter `COMMA` formal_parameter_list
+                               | empty
+        """
+        if self.current_token.type == type.RPAREN:
+            results = []
+
+        else:
+            node = self.formal_parameter()
+
+            results = [node]
+
+            while self.current_token.type == type.COMMA:
+                if PRINT_EAT_STACK:
+                    print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+                self.eat(type.COMMA)
+                results.append(self.formal_parameter())
+
+            if self.current_token.type == type.IDENTIFIER:
+                self.error()
+
+        return results
+
+    def formal_parameter(self) -> Param:
+        """
+        formal_parameter -> type_spec variable
+        """
+        type_node = self.type_spec()
+        var_node = self.variable()
+
+        param_node = Param(var_node, type_node)
+
+        return param_node
+
+    def type_spec(self) -> TypeNode:
+        """
+        type_spec -> `INTEGER` | `REAL`
+        """
+        token = self.current_token
+        if self.is_type():
+            if PRINT_EAT_STACK:
+                print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+            self.eat(token.type)
+        else:
+            self.error()
+
+        node = TypeNode(token)
         return node
 
     def empty(self) -> NoOp:
@@ -734,13 +763,10 @@ class Parser:
     def parse(self) -> Node:
         """Main Parser method
 
-        Here is our program grammar:
+        Here is the program grammar:
 
-        program -> (statement_list | compound_statement) <`EOF`>
-
-        type_spec -> `INTEGER` | `REAL`
-
-        compound_statement -> `BEGIN` statement_list `END`
+        ```
+        program -> statement_list <`EOF`>
 
         statement_list -> statement `SEMI`
                         | statement `SEMI` statement_list
@@ -751,18 +777,23 @@ class Parser:
                    | variable_declaration
                    | variable_assingment
 
-        formal_parameter_list -> formal_parameter
-                               | empty
-                               | formal_parameter `COMMA` formal_parameter_list
-
-        formal_parameter -> type_spec variable
+        compound_statement -> `BEGIN` statement_list `END`
 
         procedure_declaration -> `DEFINITION` variable `LPAREN` formal_parameter_list `RPAREN` compound_statement
+                               | `DEFINITION` variable `LPAREN` formal_parameter_list `RPAREN` `RETURNS_OP` type_spec compound_statement
 
         variable_declaration -> type_spec variable `ASSIGN` expr
                               | type_spec variable (`COMMA` variable)*
 
         variable_assignment -> variable `ASSIGN` expr
+
+        formal_parameter_list -> formal_parameter
+                               | formal_parameter `COMMA` formal_parameter_list
+                               | empty
+
+        formal_parameter -> type_spec variable
+
+        type_spec -> `INTEGER` | `REAL`
 
         empty ->
         // What did you expect cuh
@@ -779,6 +810,7 @@ class Parser:
                 | variable
 
         variable -> `IDENTIFIER`
+        ```
         """
         node = self.program()
         if self.current_token.type != type.EOF:
@@ -800,7 +832,10 @@ class NodeVisitor:
     Base class for all classes which visit/walk through a syntax tree
     """
 
-    def visit(self, node: Node):
+    def visit(self, node: Node) -> Any:
+        """
+        Executes the visit function associated with the given node
+        """
         method_name = "visit_" + typeof(node).__name__
         visitor = getattr(self, method_name, self.default_visit)
         return visitor(node)
@@ -831,19 +866,39 @@ class Node:
     def _print_children(self, tree_dict: dict, depth: int = 1) -> str:
         """
         Recursive function to neatly print a node object and it's children
+
+        Nodes look like:
+        ```
+        BinOp(
+            left: Num(...),
+            ...
+        ),
+        ```
+
+        Lists look like:
+        ```
+        list_name: [
+            ...
+        ]
+        ```
+
+        Everything else looks like:
+        ```
+        object_name: object_value,
+        ```
+
         """
         text = ""
 
         if depth == 1:
             text += self.__class__.__name__ + "(\n"
 
+        # Looks ugly, will always look ugly, but the output looks great!
         for key, value in tree_dict.items():
-
             if isinstance(value, Node):
                 text += "   " * depth + str(key) + ": " + str(value.__class__.__name__) + "(\n"
                 text += self._print_children(value.__dict__, depth + 1)
                 text += "   " * depth + "),\n"
-
             elif isinstance(value, list):
                 text += "   " * depth + str(key) + ": [\n"
                 for node in value:
@@ -854,7 +909,6 @@ class Node:
                     else:
                         raise TypeError(f"Cannot print type '{typeof(node)}'")
                 text += "   " * depth + "],\n"
-
             else:
                 text += ("   " * depth + str(key) + ": " + str(value) + ",\n")
 
@@ -913,6 +967,7 @@ class BinOp(Node):
         self.left: Node = left
         self.op: Token = op
         self.right: Node = right
+
 
 class Param(Node):
     def __init__(self, var_node, type_node):
@@ -978,7 +1033,7 @@ class BuiltinSymbol(Symbol):
 
 class VarSymbol(Symbol):
     """
-    Symbol which represents user-defined types
+    Symbol which represents user-defined variables
     """
     def __init__(self, name, datatype):
         super().__init__(name, datatype)
@@ -988,6 +1043,9 @@ class VarSymbol(Symbol):
 
 
 class ProdcedureSymbol(Symbol):
+    """
+    Symbol which represents procedure declarations
+    """
     def __init__(self, name, params=[]):
         super().__init__(name)
         self.params: list[Param] = params
@@ -1014,34 +1072,43 @@ class SymbolTable:
             self.define(BuiltinSymbol("REAL"))
 
     def __str__(self):
+        # Add header information
         text = "\nSCOPE (SCOPED SYMBOL TABLE):\n"
         text += f"Scope name    : {self.scope_name}\n"
         text += f"Scope level   : {self.scope_level}\n"
         text += f"Parent scope  : {self.parent_scope.scope_name if self.parent_scope else '<none>'}\n\n"
         text += "Scope symbol table contents\n"
         text += "---------------------------\n\n"
-        symbols = defaultdict(list)
 
+        # Organise contents of symbol table by symbol type.
+        # This excludes the built-in symbol type, which is always printed first.
+        symbols = defaultdict(list)
         for _, val in sorted(self._symbols.items()):
             symbols[val.__class__.__name__].append(val)
+            
+        symbols: dict[str, list] = dict(symbols)
 
-        symbols = dict(symbols)
-        builtin_types = symbols.get(BuiltinSymbol.__name__)
+        # At this point `symbols` is a dictionary (dict[str, list])
+        # containing the name of each (present) symbol type and
+        # a list of all the objects which are that type.
 
+        # Show the built-in symbols first
+        builtin_types: list[BuiltinSymbol] = symbols.get(BuiltinSymbol.__name__)
         if builtin_types != None:
             for builtin_type in builtin_types:
                 text += "  " + str(builtin_type) + "\n"
             text += "\n"
-
+            # Remove it from `symbols` so it is not shown again
             del symbols[BuiltinSymbol.__name__]
             
+        # Now show the remaining symbols
         for _, symbols in symbols.items():
             for symbol in symbols:
                 text += "  " + str(symbol) + "\n"
             text += "\n"
 
-        # Simple code to add bars around the top and bottom of the string,
-        # according to the longest line in the string.
+        # Simple code to add bars around the top and bottom of the table output string.
+        # The width of the bar is dependant on the longest line in the string.
         text = text.split("\n")
         del text[-1]
         longest_string_length = len(max(text, key=len))
@@ -1052,19 +1119,34 @@ class SymbolTable:
         return text
 
     def define(self, symbol: Symbol):
+        """
+        Adds a symbol to the symbol table
+        """
         self._symbols[symbol.name] = symbol
 
-    def lookup(self, name: str, search_parent_scopes: bool=True) -> Symbol | None:
-        symbol = self._symbols.get(name)
+    def lookup(self, symbol_name: str, search_parent_scopes: bool=True) -> Symbol | None:
+        """
+        Will search for the given symbol name in `self._symbols` and
+        then it will search it's parent scopes.
+
+        `search_parent_scopes` (bool): Determines whether the function will search in parent scopes. 
+        """
+        symbol = self._symbols.get(symbol_name)
         if symbol is not None:
             return symbol
 
         # Recursively search up the scopes to find symbols
         if self.parent_scope is not None and search_parent_scopes:
-            return self.parent_scope.lookup(name)
+            return self.parent_scope.lookup(symbol_name)
         else:
             return None
 
+
+###########################################
+#                                         #
+#   Semantic analysis (type checking)     #
+#                                         #
+###########################################
 
 class SemanticAnalyser(NodeVisitor):
     """
@@ -1286,7 +1368,7 @@ class Driver:
         """
         Calls the relevant function for the given mode
         """
-        self.process_arguments()
+        self._process_arguments()
         if self.mode == "cmdline":
             self.cmdline_input()
         elif self.mode == "file":
@@ -1294,22 +1376,33 @@ class Driver:
         else:
             raise ValueError(f"mode {repr(self.mode)} is not a valid mode.")
 
-    def process_arguments(self):
+    def _process_arguments(self):
+        """
+        Will configure execution based on command line arguments.
+
+        Very basic implementation right now, will improve later
+        """
         if len(sys.argv) == 1:
             #self.mode = "cmdline"
-            # NOTE: cmdline disabled while testing to make execution quicker
-            self.filename = DEFAULT_FILENAME
-            self.mode = "file"
+            # NOTE: cmdline disabled while testing to make execution quicker (Since i click run about 100 times/day (JOKE (satire)))
+            # All of the following code should be removed in prod (not that i will ever reach that stage) 
+            if os.path.isfile(DEFAULT_FILENAME):
+                self.filename = DEFAULT_FILENAME
+                self.mode = "file"
+            else:
+                raise Exception(f"file {repr(DEFAULT_FILENAME)} does not exist!")
+
         elif len(sys.argv) == 2:
             path = sys.argv[1]
-            if os.path.exists(path) and os.path.isfile(path):
+            print(path)
+            if os.path.isfile(path):
+                print("here")
                 self.filename = path
                 self.mode = "file"
         else:
             raise Exception("Unrecognised arguments!")
 
-    def process(self, code: str):
-
+    def _process(self, code: str):
         parser = Parser(code)
         symbol_table = SemanticAnalyser()
         interpreter = Interpreter()
@@ -1342,7 +1435,7 @@ class Driver:
             if not text:
                 continue
 
-            self.process(text)
+            self._process(text)
 
     def file_input(self, filename: str):
         """
@@ -1354,7 +1447,7 @@ class Driver:
         if not text:
             return
 
-        self.process(text)
+        self._process(text)
 
         
 if __name__ == '__main__':

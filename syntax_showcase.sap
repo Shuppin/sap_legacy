@@ -78,3 +78,20 @@ def empty_func() {
    |
  Gamma  
 */
+
+// Potential future syntax
+
+/* op functions
+    def op my_operator(int left, int right) -> int {
+        int result = (left*right) + (left/right);
+        return result;
+    };
+
+    def op convolve(int[] left, int[] right) {
+        ...
+    };
+
+    int new = a1 my_operator 4;
+
+    int[] x = {1, 2, 3} convolve {2, 3, 4};
+*/
