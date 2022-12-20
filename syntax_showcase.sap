@@ -4,16 +4,17 @@
 */
 
 /* Current datatypes are:
-    real
+    float
     int
 */
 
 // Declarations
-real b, x, y;
+float b, x, y;
 int z;
 
 // Assigment declarations
-real pi = 3.14;
+float pi = 3.14;
+int djasokd = pi;
 
 // Assigments
 z = 6;
@@ -59,7 +60,7 @@ def AlphaA(int a) {
 
 // Function with return type
 def AlphaB(int a) -> int {
-    real c;
+    float c;
     c = a + b;
 };
 
