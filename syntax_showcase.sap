@@ -14,7 +14,7 @@ int z;
 
 // Assigment declarations
 float pi = 3.14;
-int djasokd = pi;
+float djasokd = pi*pi;e
 
 // Assigments
 z = 6;

@@ -59,10 +59,10 @@ class TokenType(Enum):
     FLOAT           = 'float'
     DEFINITION      = 'def'
     # dynamic token types
-    INTEGER_CONST   = '<INTEGER_CONST>'
-    FLOAT_CONST     = '<FLOAT_CONST>'
-    IDENTIFIER      = '<IDENTIFIER>'
-    EOF             = '<EOF>'
+    INTEGER_CONST   = 'INTEGER_CONST'
+    FLOAT_CONST     = 'FLOAT_CONST'
+    IDENTIFIER      = 'IDENTIFIER'
+    EOF             = 'EOF'
 
 class ErrorCode(Enum):
     UNEXPECTED_TOKEN    = "Unexpected token"
@@ -765,9 +765,11 @@ class Parser:
         self.lexer: Lexer = Lexer(self.text)
         self.current_token: Token = self.lexer.get_next_token()
 
-    def error(self):
-        raise Exception(f"Parser :: Error parsing input on line {self.lexer.lineno}, pos {self.lexer.linecol}\n"
-                        f"Unexpected token <'{self.current_token.type.name}'>")
+    def error(self, error_code: ErrorCode, token: Token, message=None):
+        if message is None:
+            message = error_code.value
+        error = ParserError(error_code, message, token=token)
+        error.trigger()
 
     def eat(self, expected_type: TokenType):
         """
@@ -780,7 +782,11 @@ class Parser:
         if self.current_token.type == expected_type:
             self.current_token = self.lexer.get_next_token()
         else:
-            self.error()
+            self.error(
+                error_code=ErrorCode.UNEXPECTED_TOKEN,
+                token=self.current_token,
+                message=f"Expected type <{expected_type.name}> but got type <{self.current_token.type.name}>"
+            )
 
     # Could be a function native to `Token`
     def is_type(self) -> bool:
