@@ -23,6 +23,7 @@ PRINT_SCOPE = True
 # this code allows us to still use the original `type()` function by calling `typeof()`
 typeof = type
 
+
 ###########################################
 #                                         #
 #   Data classes                          #
@@ -60,13 +61,13 @@ class type(Enum):
 class global_scope(dict):
     def __init_subclass__(cls):
         return super().__init_subclass__()
-    
+
     def __str__(self):
         text = []
 
         for key, value in sorted(self.items(), key=lambda x: x[1][0], reverse=True):
-            text.append("  <" + str(value[0]) + "> " + str(key) +  " = " + str(value[1]))
-        
+            text.append("  <" + str(value[0]) + "> " + str(key) + " = " + str(value[1]))
+
         return "\n".join(text)
 
 
@@ -76,10 +77,10 @@ class Token:
 
     Simple data class to hold information about a token
     """
-    def __init__(self, start_pos: int, datatype: type, id: str | int | None):
+    def __init__(self, start_pos: int, datatype: type, id: Any):
         self.start_pos: int = start_pos
         self.type: type = datatype
-        self.id: str | int | None = id
+        self.id: Any = id
 
     def __str__(self) -> str:
         return f"Token[type = {self.type}, id = '{self.id}', start_pos = {self.start_pos}]"
@@ -185,7 +186,7 @@ class Lexer:
             result += self.current_char
             self.advance()
 
-        # Checks if `result` is a keyword or not and returns the appropiate type.
+        # Checks if `result` is a keyword or not and returns the appropriate type.
         # Gets the type associated with `result if applicable, else default to `type.IDENTIFIER`
         token_type = self.RESERVED_KEYWORDS.get(result, type.IDENTIFIER)
 
@@ -201,7 +202,7 @@ class Lexer:
         while self.current_char is not None and self.current_char.isdigit():
             number += self.current_char
             self.advance()
-        
+
         if self.current_char == ".":
             number += self.current_char
             self.advance()
@@ -288,7 +289,7 @@ class Lexer:
                 else:
                     token = Token(self.pos, type.MINUS, self.current_char)
                     self.advance()
-                
+
                 return token
 
             # Symbols
@@ -451,13 +452,13 @@ class Parser:
                 self.error()
 
         return results
-        
+
     def statement(self) -> Node:
         """
         statement -> compound_statement
                    | procedure_declaration
                    | variable_declaration
-                   | variable_assingment
+                   | variable_assignment
         """
         if self.current_token.type == type.BEGIN:
             node = self.compound_statement()
@@ -517,7 +518,7 @@ class Parser:
             proc_decl = ProcedureDecl(procedure_var, params, body)
 
         elif self.current_token.type == type.RETURNS_OP:
-            
+
             if PRINT_EAT_STACK:
                 print("Calling eat() from line", getframeinfo(currentframe()).lineno)
             self.eat(type.RETURNS_OP)
@@ -552,7 +553,7 @@ class Parser:
             expr_node = self.expr()
 
             node = VarDecl(type_node, var_node, assign_op, expr_node)
-        
+
         # type_spec variable (`COMMA` variable)*
         else:
             node = Compound()
@@ -683,7 +684,7 @@ class Parser:
                 if PRINT_EAT_STACK:
                     print("Calling eat() from line", getframeinfo(currentframe()).lineno)
                 self.eat(type.INTEGER_DIV)
-            
+
             elif token.type == type.FLOAT_DIV:
                 if PRINT_EAT_STACK:
                     print("Calling eat() from line", getframeinfo(currentframe()).lineno)
@@ -775,7 +776,7 @@ class Parser:
         statement -> compound_statement
                    | procedure_declaration
                    | variable_declaration
-                   | variable_assingment
+                   | variable_assignment
 
         compound_statement -> `BEGIN` statement_list `END`
 
@@ -840,7 +841,6 @@ class NodeVisitor:
         visitor = getattr(self, method_name, self.default_visit)
         return visitor(node)
 
-
     def default_visit(self, node: Node):
         """
         Code gets executed when there is no `visit_(...)` function associated with a given `Node` object.
@@ -850,7 +850,7 @@ class NodeVisitor:
 
 ###########################################
 #                                         #
-#  Node defintions                        #
+#  Node definitions                       #
 #                                         #
 ###########################################
 
@@ -923,6 +923,7 @@ INTERIOR NODES
 (in order of precedence)
 """
 
+
 class Program(Node):
     def __init__(self):
         self.statements: list[Node] = []
@@ -947,7 +948,7 @@ class ProcedureDecl(Node):
         self.params: list[Param] = params
         self.return_type: TypeNode | None = return_type
         self.compound_node: Compound = compound_node
-        
+
 
 class AssignOp(Node):
     def __init__(self, left, op, right):
@@ -979,6 +980,7 @@ class Param(Node):
 LEAF NODES
 (in order of precedence)
 """
+
 
 class TypeNode(Node):
     def __init__(self, token):
@@ -1029,7 +1031,7 @@ class BuiltinSymbol(Symbol):
 
     def __str__(self):
         return f"<builtin> {self.name}"
-        
+
 
 class VarSymbol(Symbol):
     """
@@ -1037,12 +1039,12 @@ class VarSymbol(Symbol):
     """
     def __init__(self, name, datatype):
         super().__init__(name, datatype)
-    
+
     def __str__(self):
         return f"<variable> (id: '{self.name}', type: '{self.type.name}')"
 
 
-class ProdcedureSymbol(Symbol):
+class ProcedureSymbol(Symbol):
     """
     Symbol which represents procedure declarations
     """
@@ -1053,8 +1055,10 @@ class ProdcedureSymbol(Symbol):
     def __str__(self):
         if len(self.params) == 0:
             return f"<procedure> (id: '{self.name}', parameters: <no params>)"
-        else:        
-            return f"<procedure> (id: '{self.name}', parameters: {', '.join(list(map(lambda param: f'({param.var_node.id}, <{param.type_node.id}>)', self.params)))})"
+        else:
+            # Okay, yes this is horrendous don't @me
+            return (f"<procedure> (id: '{self.name}', parameters: "
+                    f"{', '.join(list(map(lambda param: f'({param.var_node.id}, <{param.type_node.id}>)', self.params)))})")
 
 
 class SymbolTable:
@@ -1085,7 +1089,7 @@ class SymbolTable:
         symbols = defaultdict(list)
         for _, val in sorted(self._symbols.items()):
             symbols[val.__class__.__name__].append(val)
-            
+
         symbols: dict[str, list] = dict(symbols)
 
         # At this point `symbols` is a dictionary (dict[str, list])
@@ -1094,13 +1098,13 @@ class SymbolTable:
 
         # Show the built-in symbols first
         builtin_types: list[BuiltinSymbol] = symbols.get(BuiltinSymbol.__name__)
-        if builtin_types != None:
+        if builtin_types is not None:
             for builtin_type in builtin_types:
                 text += "  " + str(builtin_type) + "\n"
             text += "\n"
             # Remove it from `symbols` so it is not shown again
             del symbols[BuiltinSymbol.__name__]
-            
+
         # Now show the remaining symbols
         for _, symbols in symbols.items():
             for symbol in symbols:
@@ -1108,12 +1112,12 @@ class SymbolTable:
             text += "\n"
 
         # Simple code to add bars around the top and bottom of the table output string.
-        # The width of the bar is dependant on the longest line in the string.
+        # The width of the bar is dependent on the longest line in the string.
         text = text.split("\n")
         del text[-1]
         longest_string_length = len(max(text, key=len))
-        text.insert(2, "="*(longest_string_length+1))
-        text.append("="*(longest_string_length+1) + "\n")
+        text.insert(2, "=" * (longest_string_length + 1))
+        text.append("=" * (longest_string_length + 1) + "\n")
         text = "\n".join(text)
 
         return text
@@ -1124,10 +1128,10 @@ class SymbolTable:
         """
         self._symbols[symbol.name] = symbol
 
-    def lookup(self, symbol_name: str, search_parent_scopes: bool=True) -> Symbol | None:
+    def lookup(self, symbol_name: str, search_parent_scopes: bool = True) -> Symbol | None:
         """
         Will search for the given symbol name in `self._symbols` and
-        then it will search it's parent scopes.
+        then it will search its parent scopes.
 
         `search_parent_scopes` (bool): Determines whether the function will search in parent scopes. 
         """
@@ -1183,8 +1187,8 @@ class SemanticAnalyser(NodeVisitor):
         var_id = node.var_node.id
 
         if self.current_scope.lookup(var_id, search_parent_scopes=False) is not None:
-            raise NameError("TypeChecker :: Attempted to intialise variable with same name!")
-        
+            raise NameError("TypeChecker :: Attempted to initialise variable with same name!")
+
         var_symbol = VarSymbol(var_id, type_symbol)
         self.current_scope.define(var_symbol)
 
@@ -1198,10 +1202,11 @@ class SemanticAnalyser(NodeVisitor):
         if self.current_scope.lookup(proc_name) is not None:
             raise NameError("TypeChecker :: Attempted to declare procedure with same name!")
 
-        proc_symbol = ProdcedureSymbol(proc_name, proc_params)
+        proc_symbol = ProcedureSymbol(proc_name, proc_params)
         self.current_scope.define(proc_symbol)
 
-        proc_scope = SymbolTable(scope_name=proc_name, scope_level=self.current_scope.scope_level+1, parent_scope=self.current_scope)
+        proc_scope = SymbolTable(scope_name=proc_name, scope_level=self.current_scope.scope_level + 1,
+                                 parent_scope=self.current_scope)
         self.current_scope = proc_scope
 
         for param in proc_params:
@@ -1223,7 +1228,7 @@ class SemanticAnalyser(NodeVisitor):
         var_symbol = self.current_scope.lookup(var_id)
 
         if var_symbol is None:
-            raise NameError(f"TypeChecker :: Attempted to assign value to uninitialised varaible {repr(var_id)}!")
+            raise NameError(f"TypeChecker :: Attempted to assign value to uninitialised variable {repr(var_id)}!")
 
         self.visit(node.right)
 
@@ -1311,7 +1316,7 @@ class Interpreter(NodeVisitor):
         if variable_id in self.global_scope:
             self.global_scope[variable_id][1] = self.visit(node.right)
         else:
-            raise ValueError("Interpreter :: Attempted to assign value to uninitialised varaible!")
+            raise ValueError("Interpreter :: Attempted to assign value to uninitialised variable!")
 
     def visit_UnaryOp(self, node: UnaryOp):
         if node.op.type == type.PLUS:
@@ -1383,9 +1388,9 @@ class Driver:
         Very basic implementation right now, will improve later
         """
         if len(sys.argv) == 1:
-            #self.mode = "cmdline"
-            # NOTE: cmdline disabled while testing to make execution quicker (Since i click run about 100 times/day (JOKE (satire)))
-            # All of the following code should be removed in prod (not that i will ever reach that stage) 
+            # self.mode = "cmdline"
+            # NOTE: cmdline disabled while testing to make execution quicker (Since I click run about 100 times/day (JOKE (satire)))
+            # All of the following code should be removed in prod (not that I will ever reach that stage)
             if os.path.isfile(DEFAULT_FILENAME):
                 self.filename = DEFAULT_FILENAME
                 self.mode = "file"
@@ -1449,7 +1454,7 @@ class Driver:
 
         self._process(text)
 
-        
+
 if __name__ == '__main__':
     driver = Driver()
     driver.run_program()

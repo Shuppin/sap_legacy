@@ -25,7 +25,7 @@ b = z;
 x = x + z;
 x = x - z;
 x = x * z;
-x = x / z;
+x = x / /*wow*/ z;
 
 // Brackets
 x = /* wow */ ((x+3) / (z-1))*4;
