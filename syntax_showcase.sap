@@ -2,7 +2,6 @@
     Multi-line
     comments!
 */
-
 /* Current datatypes are:
     float
     int
@@ -14,7 +13,7 @@ int z;
 
 // Assigment declarations
 float pi = 3.14;
-float djasokd = pi*pi;e
+float e = pi*pi;
 
 // Assigments
 z = 6;

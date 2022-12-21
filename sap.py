@@ -14,7 +14,7 @@ MODE = "file"
 
 DEFAULT_FILENAME = "syntax_showcase.sap"
 
-PRINT_TOKENS = True
+PRINT_TOKENS = False
 PRINT_EAT_STACK = False
 PRINT_TREE = False
 PRINT_SCOPE = False
@@ -65,11 +65,9 @@ class TokenType(Enum):
     EOF             = 'EOF'
 
 class ErrorCode(Enum):
-    UNEXPECTED_TOKEN    = "Unexpected token"
-    INVALID_ID          = "Invalid identifier"
-    ID_NOT_FOUND        = "Identifier not found"
-    DUPLICATE_ID        = "Duplicate identifier found"
-    TOKEN_ERROR         = "Could not tokenize token"
+    SYNTAX_ERROR        = "SyntaxError"
+    NAME_ERROR          = "NameError"
+    TYPE_ERROR          = "TypeError"
 
 
 ###########################################
@@ -98,11 +96,12 @@ class Token:
 
     Simple data class to hold information about a token
     """
-    def __init__(self, datatype: TokenType, id: Any, lineno: int, linecol: int):
+    def __init__(self, datatype: TokenType, id: Any, lineno: int, linecol: int, startcol: int | None = None):
         self.type: TokenType = datatype
         self.id: Any = id
         self.lineno: int = lineno
         self.linecol: int = linecol
+        self.startcol: int | None = startcol
 
     def __str__(self) -> str:
         return f"Token[type = {self.type}, id = '{self.id}', position = <{self.lineno}:{self.linecol}>]"
@@ -118,9 +117,11 @@ class Token:
 ###########################################
 
 class Error(Exception):
-    def __init__(self, error_code: ErrorCode, message: str, token:Token=None, position:list[int]=None):
+    def __init__(self, error_code: ErrorCode, message: str, token:Token=None, position:list[int]=None, surrounding_lines:list[str]=None):
         self.error_code: ErrorCode = error_code
-        self.message: str = f'{self.__class__.__name__}: {message}'
+        self.message: str = f'({self.__class__.__name__[:-5]}) {self.error_code.value}: {message}'
+        self.token: Token | None = token
+        self.surrounding_lines: list[str] | None = surrounding_lines
         self.lineno: int
         self.linecol: int
         if token is not None:
@@ -133,9 +134,34 @@ class Error(Exception):
             raise ValueError("Not enough information parsed into Error()")
 
     def trigger(self):
-        error_message = (f'File "{current_filename}", position <{self.lineno}:{self.linecol}>\n'
-                         f'   <line of code goes here>\n'
-                         f'{self.message}')
+        if self.surrounding_lines is not None and self.token is not None and self.token.startcol is not None:
+            error_message = [
+                (f'File "{current_filename}", position <{self.lineno}:{self.linecol}>\n'),
+                (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno-3)))}{self.lineno-3} │ {self.surrounding_lines[self.lineno-4]}\n" if (self.lineno-4) >= 0 else f""),
+                (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno-2)))}{self.lineno-2} │ {self.surrounding_lines[self.lineno-3]}\n" if (self.lineno-3) >= 0 else f""),
+                (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno-1)))}{self.lineno-1} │ {self.surrounding_lines[self.lineno-2]}\n" if (self.lineno-2) >= 0 else f""),
+                (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno  )))}{self.lineno  } │ {self.surrounding_lines[self.lineno-1]}\n"),
+                (f"   {' '*len(str(self.lineno+2))}  {' '*(self.token.startcol-1)} {'~'*(self.linecol-self.token.startcol)}\n"),
+                (self.message)
+                ]
+            error_message = "".join(error_message)
+
+        elif self.surrounding_lines is not None:
+            error_message = [
+                (f'File "{current_filename}", position <{self.lineno}:{self.linecol}>\n'),
+                (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno-3)))}{self.lineno-3} │ {self.surrounding_lines[self.lineno-4]}\n" if (self.lineno-4) >= 0 else f""),
+                (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno-2)))}{self.lineno-2} │ {self.surrounding_lines[self.lineno-3]}\n" if (self.lineno-3) >= 0 else f""),
+                (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno-1)))}{self.lineno-1} │ {self.surrounding_lines[self.lineno-2]}\n" if (self.lineno-2) >= 0 else f""),
+                (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno  )))}{self.lineno  } │ {self.surrounding_lines[self.lineno-1]}\n"),
+                (f"   {' '*len(str(self.lineno+2))}  {' '*(self.linecol-1)} ^\n"),
+                (self.message)
+                ]
+            error_message = "".join(error_message)
+        else:
+            error_message = (f'File "{current_filename}", position <{self.lineno}:{self.linecol}>\n'
+                             f'   <error fetching lines>\n'
+                             f'{self.message}')
+
         if _DEV_RAISE_ERROR_STACK:
             print(error_message)
             raise self
@@ -151,7 +177,7 @@ class ParserError(Error):
     pass
 
 
-class SemanticError(Error):
+class SemanticAnalyserError(Error):
     pass
 
 
@@ -491,7 +517,7 @@ class Lexer:
     """
     Main lexer class
 
-    The lexer is responsible for the tokenization of the code. (Side note: I think that is the british spelling)
+    The lexer is responsible for the tokenisation of the code.
     In other words, it splits the code up into its individual components.
 
     For example given the code:
@@ -506,6 +532,7 @@ class Lexer:
     """
     def __init__(self, text):
         self.text: str = text
+        self.text_lines: list[str] = self.text.split('\n')
         self.pos: int = 0
         self.lineno: int = 1
         self.linecol: int = 0
@@ -520,7 +547,7 @@ class Lexer:
     # Utility functions
 
     def error(self):
-        error = LexerError(ErrorCode.TOKEN_ERROR, f"could not tokenize '{self.current_char}'", position=[self.lineno, self.linecol])
+        error = LexerError(ErrorCode.SYNTAX_ERROR, f"could not tokenise '{self.current_char}'", position=[self.lineno, self.linecol], surrounding_lines=self.text_lines)
         error.trigger()
 
     def advance(self):
@@ -534,9 +561,9 @@ class Lexer:
         if self.pos > len(self.text) - 1:
             self.current_char = None
         else:
-            self.current_char = self.text[self.pos]
             self.linecol += 1
-
+            self.current_char = self.text[self.pos]
+            
     def peek(self) -> None | str:
         """Peeks at the next character in the code and returns it"""
         peek_pos = self.pos + 1
@@ -569,6 +596,7 @@ class Lexer:
     def identifier(self) -> Token:
         """Creates and returns an identifier token"""
         result = ""
+        start_pos = self.linecol
         while self.current_char is not None and (self.current_char.isalnum() or self.current_char == "_"):
             result += self.current_char
             self.advance()
@@ -577,14 +605,14 @@ class Lexer:
         # Gets the type associated with `result if applicable, else default to `type.IDENTIFIER`
         token_type = self.RESERVED_KEYWORDS.get(result, TokenType.IDENTIFIER)
 
-        token = Token(token_type, result, self.lineno, self.linecol)
+        token = Token(token_type, result, self.lineno, self.linecol, startcol=start_pos)
 
         return token
 
     def number(self) -> Token:
         """Consumes a number from the input code and returns it"""
         number = ''
-
+        start_pos = self.linecol
         while self.current_char is not None and self.current_char.isdigit():
             number += self.current_char
             self.advance()
@@ -597,10 +625,10 @@ class Lexer:
                 number += self.current_char
                 self.advance()
 
-            token = Token(TokenType.FLOAT_CONST, float(number), self.lineno, self.linecol)
+            token = Token(TokenType.FLOAT_CONST, float(number), self.lineno, self.linecol, startcol=start_pos)
 
         else:
-            token = Token(TokenType.INTEGER_CONST, int(number), self.lineno, self.linecol)
+            token = Token(TokenType.INTEGER_CONST, int(number), self.lineno, self.linecol, startcol=start_pos)
 
         return token
 
@@ -765,10 +793,8 @@ class Parser:
         self.lexer: Lexer = Lexer(self.text)
         self.current_token: Token = self.lexer.get_next_token()
 
-    def error(self, error_code: ErrorCode, token: Token, message=None):
-        if message is None:
-            message = error_code.value
-        error = ParserError(error_code, message, token=token)
+    def error(self, error_code: ErrorCode, token: Token, message):
+        error = ParserError(error_code, message, token=token, surrounding_lines=self.lexer.text_lines)
         error.trigger()
 
     def eat(self, expected_type: TokenType):
@@ -782,11 +808,24 @@ class Parser:
         if self.current_token.type == expected_type:
             self.current_token = self.lexer.get_next_token()
         else:
-            self.error(
-                error_code=ErrorCode.UNEXPECTED_TOKEN,
-                token=self.current_token,
-                message=f"Expected type <{expected_type.name}> but got type <{self.current_token.type.name}>"
-            )
+            if expected_type == TokenType.END:
+                self.error(
+                    error_code=ErrorCode.SYNTAX_ERROR,
+                    token=self.current_token,
+                    message=f"Unexpected type <{self.current_token.type.name}>"
+                )
+            elif expected_type == TokenType.SEMI:
+                self.error(
+                    error_code=ErrorCode.SYNTAX_ERROR,
+                    token=self.current_token,
+                    message=f"Expected type <{expected_type.name}> but got type <{self.current_token.type.name}>, perhaps you forgot a semicolon?"
+                )
+            else:
+                self.error(
+                    error_code=ErrorCode.SYNTAX_ERROR,
+                    token=self.current_token,
+                    message=f"Expected type <{expected_type.name}> but got type <{self.current_token.type.name}>"
+                )
 
     # Could be a function native to `Token`
     def is_type(self) -> bool:
@@ -840,8 +879,9 @@ class Parser:
                     print("Calling eat() from line", getframeinfo(currentframe()).lineno)
                 self.eat(TokenType.SEMI)
 
-            if self.current_token.type == TokenType.IDENTIFIER:
-                self.error()
+            # Commented out due to unknown behaviour
+            #if self.current_token.type == TokenType.IDENTIFIER:
+            #    self.error()
 
         return results
 
@@ -922,7 +962,11 @@ class Parser:
             proc_decl = ProcedureDecl(procedure_var, params, body, return_type=return_type)
 
         else:
-            self.error()
+            self.error(
+                error_code=ErrorCode.SYNTAX_ERROR,
+                token=self.current_token,
+                message=f"Invalid procedure declaration form"
+            )
 
         return proc_decl
 
@@ -998,8 +1042,9 @@ class Parser:
                 self.eat(TokenType.COMMA)
                 results.append(self.formal_parameter())
 
-            if self.current_token.type == TokenType.IDENTIFIER:
-                self.error()
+            # Commented out due to unknown behaviour
+            #if self.current_token.type == TokenType.IDENTIFIER:
+            #    self.error()
 
         return results
 
@@ -1024,7 +1069,11 @@ class Parser:
                 print("Calling eat() from line", getframeinfo(currentframe()).lineno)
             self.eat(token.type)
         else:
-            self.error()
+            self.error(
+                error_code=ErrorCode.TYPE_ERROR,
+                token=self.current_token,
+                message=f"'{self.current_token.id}' is not a valid type!"
+            )
 
         node = TypeNode(token)
         return node
@@ -1209,7 +1258,11 @@ class Parser:
         """
         node = self.program()
         if self.current_token.type != TokenType.EOF:
-            self.error()
+            self.error(
+                error_code=ErrorCode.SYNTAX_ERROR,
+                token=self.current_token,
+                message=f"Program terminated with <{self.current_token.type.value}>, not <{TokenType.EOF}>"
+            )
 
         return node
 
@@ -1224,8 +1277,13 @@ class SemanticAnalyser(NodeVisitor):
     """
     Constructs the symbol table and performs type-checks before runtime
     """
-    def __init__(self):
+    def __init__(self, text):
+        self.text_lines: list[str] = text.split('\n')
         self.current_scope: SymbolTable | None = None
+
+    def error(self, error_code: ErrorCode, token: Token, message):
+        error = SemanticAnalyserError(error_code, message, token, surrounding_lines=self.text_lines)
+        error.trigger()
 
     def visit_Program(self, node: Program):
         builtin_scope = SymbolTable(scope_name="<builtins>", scope_level=0)
@@ -1255,7 +1313,11 @@ class SemanticAnalyser(NodeVisitor):
         var_id = node.var_node.id
 
         if self.current_scope.lookup(var_id, search_parent_scopes=False) is not None:
-            raise NameError("TypeChecker :: Attempted to initialise variable with same name!")
+            self.error(
+                error_code=ErrorCode.NAME_ERROR,
+                token=node.var_node.token,
+                message="Cannot initialise variable with same name"
+            )
 
         var_symbol = VarSymbol(var_id, type_symbol)
         self.current_scope.define(var_symbol)
@@ -1268,7 +1330,11 @@ class SemanticAnalyser(NodeVisitor):
         proc_params: list[Param] = node.params
 
         if self.current_scope.lookup(proc_name) is not None:
-            raise NameError("TypeChecker :: Attempted to declare procedure with same name!")
+            self.error(
+                error_code=ErrorCode.NAME_ERROR,
+                token=node.procedure_var.token,
+                message="Cannot declare procedure with same name"
+            )
 
         proc_symbol = ProcedureSymbol(proc_name, proc_params)
         self.current_scope.define(proc_symbol)
@@ -1296,7 +1362,11 @@ class SemanticAnalyser(NodeVisitor):
         var_symbol = self.current_scope.lookup(var_id)
 
         if var_symbol is None:
-            raise NameError(f"TypeChecker :: Attempted to assign value to uninitialised variable {repr(var_id)}!")
+            self.error(
+                error_code=ErrorCode.NAME_ERROR,
+                token=node.left,
+                message=f"Variable {repr(var_id)} does not exist"
+            )
 
         self.visit(node.right)
 
@@ -1312,7 +1382,11 @@ class SemanticAnalyser(NodeVisitor):
         type_symbol = self.current_scope.lookup(type_id)
 
         if type_symbol is None:
-            raise NameError(f"TypeChecker :: Unrecognised type {repr(type_id)}")
+            self.error(
+                error_code=ErrorCode.NAME_ERROR,
+                token=node.token,
+                message=f"Unrecognised type {repr(type_id)}"
+            )
         else:
             return type_symbol
 
@@ -1321,7 +1395,11 @@ class SemanticAnalyser(NodeVisitor):
         var_symbol = self.current_scope.lookup(var_id)
 
         if var_symbol is None:
-            raise NameError(f"TypeChecker :: Attempted to use uninitialised value {repr(var_id)}")
+            self.error(
+                error_code=ErrorCode.NAME_ERROR,
+                token=node.token,
+                message=f"Variable {repr(var_id)} does not exist"
+            )
         else:
             return var_symbol
 
@@ -1338,6 +1416,7 @@ class SemanticAnalyser(NodeVisitor):
 #                                         #
 ###########################################
 
+# Currently some unloved garbárge
 class Interpreter(NodeVisitor):
     """
     Main interpreter class
@@ -1480,7 +1559,7 @@ class Driver:
 
     def _process(self, code: str):
         parser = Parser(code)
-        symbol_table = SemanticAnalyser()
+        symbol_table = SemanticAnalyser(code)
         interpreter = Interpreter()
 
         tree = parser.parse()
