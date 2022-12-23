@@ -12,34 +12,34 @@ float b, x, y;
 int z;
 
 // Assigment declarations
-float pi = 3.14;
-float e = pi*pi;
+float pi := 3.14;
+float e := pi*pi;
 
 // Assigments
-z = 6;
-x = 5;
-b = z;
+z := 6;
+x := 5;
+b := z;
 
 // Note, variables must contain a number value to perfom operations
 // Operators
-x = x + z;
-x = x - z;
-x = x * z;
-x = x / /*wow*/ z;
+x := x + z;
+x := x - z;
+x := x * z;
+x := x / /*wow*/ z;
 
 // Brackets
-x = /* wow */ ((x+3) / (z-1))*4;
+x := /* wow */ ((x+3) / (z-1))*4;
 
 // Unary operations
-x = -x;
-x = +x;
-x = --x;
-x = +++++++----x; // Unary operations are stackable
+x := -x;
+x := +x;
+x := --x;
+x := +++++++----x; // Unary operations are stackable
 
 // Compound statements
 // Currently only acts as grouped code, remains in current scope
 {
-    y = z + x / b * pi;
+    y := z + x / b * pi;
 };
 
 // Functions
@@ -52,7 +52,7 @@ def AlphaA(int a) {
 
         def Gamma(int c) {
             int x;
-            x = a + b + c + x + y + z;
+            x := a + b + c + x + y + z;
         };
     };
 };
@@ -60,13 +60,16 @@ def AlphaA(int a) {
 // Function with return type
 def AlphaB(int a) -> int {
     float c;
-    c = a + b;
+    c := a + b;
 };
 
 // Function without arguments
 def empty_func() {
 
 };
+
+empty_func();
+AlphaB(AlphaA);
 
 /* Scope diagram:
     <global> -------
@@ -83,7 +86,7 @@ def empty_func() {
 
 /* op functions
     def op my_operator(int left, int right) -> int {
-        int result = (left*right) + (left/right);
+        int result := (left*right) + (left/right);
         return result;
     };
 
@@ -91,7 +94,7 @@ def empty_func() {
         ...
     };
 
-    int new = a1 my_operator 4;
+    int new := a1 my_operator 4;
 
-    int[] x = {1, 2, 3} convolve {2, 3, 4};
+    int[] x := {1, 2, 3} convolve {2, 3, 4};
 */

@@ -1,0 +1,13 @@
+def main(int start_code, int e) {
+    int x := (start_code*14);
+};
+
+def f(int x) {
+    x := x * x;
+};
+
+int mycode := 5;
+main(mycode*4, 42);
+
+int x := 5;
+f(x);

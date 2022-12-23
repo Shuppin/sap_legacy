@@ -13,11 +13,11 @@ from enum import Enum
 # The valid modes are: "file" or "cmdline"
 MODE = "file"
 
-DEFAULT_FILENAME = "compounds.sap"
+DEFAULT_FILENAME = "procedure_calls.sap"
 
 PRINT_TOKENS = False
 PRINT_EAT_STACK = False
-PRINT_TREE = False
+PRINT_TREE = True
 PRINT_SCOPE = False
 
 _DEV_RAISE_ERROR_STACK = False
@@ -280,6 +280,12 @@ class ProcedureDecl(Node):
         self.params: list[Param] = params
         self.return_type: TypeNode | None = return_type
         self.compound_node: Compound = compound_node
+
+
+class ProcedureCall(Node):
+    def __init__(self, procedure_var, literal_params):
+        self.procedure_var: Var = procedure_var
+        self.literal_params: list[Param] = literal_params
 
 
 class AssignOp(Node):
@@ -902,6 +908,7 @@ class Parser:
         """
         statement -> compound_statement
                    | procedure_declaration
+                   | procedure_call
                    | variable_declaration
                    | variable_assignment
         """
@@ -912,7 +919,11 @@ class Parser:
         elif self.is_type():
             node = self.variable_declaration()
         elif self.current_token.type == TokenType.IDENTIFIER:
-            node = self.variable_assignment()
+            assert len(TokenType.LPAREN.value) == 1  # Assert that `LPAREN` is a single character symbol
+            if self.lexer.current_char == TokenType.LPAREN.value:
+                node = self.procedure_call()
+            else:
+                node = self.variable_assignment()
         else:
             node = self.empty()
         return node
@@ -982,6 +993,38 @@ class Parser:
             )
 
         return proc_decl
+
+    def procedure_call(self) -> ProcedureCall:
+        """
+        procedure_call -> variable `LPAREN` (empty | expr (`COMMA` expr)*) `RPAREN`
+        """
+        procedure_var = self.current_token
+
+        if PRINT_EAT_STACK:
+            print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+        self.eat(TokenType.IDENTIFIER)
+
+        if PRINT_EAT_STACK:
+            print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+        self.eat(TokenType.LPAREN)
+
+        literal_params = []
+        if self.current_token.type != TokenType.RPAREN:
+            literal_params.append(self.expr())
+
+            while self.current_token.type == TokenType.COMMA:
+                if PRINT_EAT_STACK:
+                    print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+                self.eat(TokenType.COMMA)
+                literal_params.append(self.expr())
+
+        if PRINT_EAT_STACK:
+            print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+        self.eat(TokenType.RPAREN)
+
+        node = ProcedureCall(procedure_var, literal_params)
+
+        return node
 
     def variable_declaration(self) -> VarDecl | Compound:
         """
@@ -1231,6 +1274,7 @@ class Parser:
 
         statement -> compound_statement
                    | procedure_declaration
+                   | procedure_call
                    | variable_declaration
                    | variable_assignment
 
@@ -1238,6 +1282,8 @@ class Parser:
 
         procedure_declaration -> `DEFINITION` variable `LPAREN` formal_parameter_list `RPAREN` compound_statement
                                | `DEFINITION` variable `LPAREN` formal_parameter_list `RPAREN` `RETURNS_OP` type_spec compound_statement
+
+        procedure_call -> variable `LPAREN` (empty | expr (`COMMA` expr)*) `RPAREN`
 
         variable_declaration -> type_spec variable `ASSIGN` expr
                               | type_spec variable (`COMMA` variable)*
@@ -1370,6 +1416,10 @@ class SemanticAnalyser(NodeVisitor):
         # Return to parent scope
         self.current_scope = self.current_scope.parent_scope
 
+    def visit_ProcedureCall(self, node: ProcedureCall):
+        for param_node in node.literal_params:
+            self.visit(param_node)
+
     def visit_AssignOp(self, node: AssignOp):
         var_id = node.left.id
         var_symbol = self.current_scope.lookup(var_id)
@@ -1469,6 +1519,9 @@ class Interpreter(NodeVisitor):
             self.global_scope[variable_id] = [variable_type_name, None]
 
     def visit_ProcedureDecl(self, node):
+        pass
+
+    def visit_ProcedureCall(self, node):
         pass
 
     def visit_AssignOp(self, node: AssignOp):
