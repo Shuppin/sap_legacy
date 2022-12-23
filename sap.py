@@ -45,7 +45,7 @@ class TokenType(Enum):
     RETURNS_OP      = '->'
     LPAREN          = '('
     RPAREN          = ')'
-    ASSIGN          = '='
+    ASSIGN          = ':='
     SEMI            = ';'
     COLON           = ':'
     COMMA           = ','
@@ -139,7 +139,7 @@ class Error(Exception):
                 (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno-2)))}{self.lineno-2} │ {self.surrounding_lines[self.lineno-3]}\n" if (self.lineno-3) >= 0 else f""),
                 (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno-1)))}{self.lineno-1} │ {self.surrounding_lines[self.lineno-2]}\n" if (self.lineno-2) >= 0 else f""),
                 (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno  )))}{self.lineno  } │ {self.surrounding_lines[self.lineno-1]}\n"),
-                (f"   {' '*len(str(self.lineno+2))}  {' '*(self.token.startcol-1)} {'~'*(self.linecol-self.token.startcol)}\n"),
+                (f"   {' '*len(str(self.lineno+2))}  {' '*(self.token.startcol)} {'~'*(self.linecol-self.token.startcol)}\n"),
                 (self.message)
                 ]
             error_message = "".join(error_message)
@@ -151,7 +151,7 @@ class Error(Exception):
                 (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno-2)))}{self.lineno-2} │ {self.surrounding_lines[self.lineno-3]}\n" if (self.lineno-3) >= 0 else f""),
                 (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno-1)))}{self.lineno-1} │ {self.surrounding_lines[self.lineno-2]}\n" if (self.lineno-2) >= 0 else f""),
                 (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno  )))}{self.lineno  } │ {self.surrounding_lines[self.lineno-1]}\n"),
-                (f"   {' '*len(str(self.lineno+2))}  {' '*(self.linecol-1)} ^\n"),
+                (f"   {' '*len(str(self.lineno+2))}  {' '*(self.linecol)} ^\n"),
                 (self.message)
                 ]
             error_message = "".join(error_message)
@@ -552,15 +552,16 @@ class Lexer:
     def advance(self):
         """Advance `self.pos` and set `self.current_char`"""
 
+        self.pos += 1
+        self.linecol += 1
+
         if self.current_char == "\n":
             self.lineno += 1
             self.linecol = 0
 
-        self.pos += 1
         if self.pos > len(self.text) - 1:
             self.current_char = None
         else:
-            self.linecol += 1
             self.current_char = self.text[self.pos]
             
     def peek(self) -> None | str:
@@ -666,8 +667,9 @@ class Lexer:
 
             # Operators
 
-            elif self.current_char == "=":
-                token = Token(TokenType.ASSIGN, self.current_char, self.lineno, self.linecol)
+            elif self.current_char == ":" and self.peek() == "=":
+                token = Token(TokenType.ASSIGN, ':=', self.lineno, self.linecol)
+                self.advance()
                 self.advance()
                 return token
 
@@ -696,7 +698,7 @@ class Lexer:
 
             elif self.current_char == '-':
                 if self.peek() == ">":
-                    token = Token(TokenType.RETURNS_OP, self.current_char, self.lineno, self.linecol)
+                    token = Token(TokenType.RETURNS_OP, "->", self.lineno, self.linecol)
                     self.advance()
                     self.advance()
                 else:
