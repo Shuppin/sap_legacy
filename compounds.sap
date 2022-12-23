@@ -1,0 +1,13 @@
+int y = 5 + 4;
+
+{
+    int tt = 4;
+};
+
+int z = 6 + 4;
+
+def abcdef() {};
+
+{
+    int b = 4;
+};;

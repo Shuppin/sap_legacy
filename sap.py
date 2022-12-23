@@ -1,18 +1,19 @@
 from __future__ import annotations
 
+import sys
+import os
+
 from inspect import currentframe, getframeinfo
 from collections import defaultdict
 from typing import Any
 from enum import Enum
-
-import sys, os
 
 # Constants
 
 # The valid modes are: "file" or "cmdline"
 MODE = "file"
 
-DEFAULT_FILENAME = "syntax_showcase.sap"
+DEFAULT_FILENAME = "compounds.sap"
 
 PRINT_TOKENS = False
 PRINT_EAT_STACK = False
@@ -20,10 +21,6 @@ PRINT_TREE = False
 PRINT_SCOPE = False
 
 _DEV_RAISE_ERROR_STACK = False
-
-# Since the `type()` function is overwritten,
-# this code allows us to still use the original `type()` function by calling `typeof()`
-typeof = type
 
 # Basic implementation of file name tracking
 current_filename = "<cmdline>"
@@ -63,6 +60,7 @@ class TokenType(Enum):
     FLOAT_CONST     = 'FLOAT_CONST'
     IDENTIFIER      = 'IDENTIFIER'
     EOF             = 'EOF'
+
 
 class ErrorCode(Enum):
     SYNTAX_ERROR        = "SyntaxError"
@@ -169,6 +167,7 @@ class Error(Exception):
             print(error_message)
             exit()
 
+
 class LexerError(Error):
     pass
 
@@ -240,7 +239,7 @@ class Node:
                         text += self._print_children(node.__dict__, depth + 2)
                         text += "   " * (depth + 1) + "),\n"
                     else:
-                        raise TypeError(f"Cannot print type '{typeof(node)}'")
+                        raise TypeError(f"Cannot print type '{type(node)}'")
                 text += "   " * depth + "],\n"
             else:
                 text += ("   " * depth + str(key) + ": " + str(value) + ",\n")
@@ -496,7 +495,7 @@ class NodeVisitor:
         """
         Executes the visit function associated with the given node
         """
-        method_name = "visit_" + typeof(node).__name__
+        method_name = "visit_" + type(node).__name__
         visitor = getattr(self, method_name, self.default_visit)
         return visitor(node)
 
@@ -504,7 +503,7 @@ class NodeVisitor:
         """
         Code gets executed when there is no `visit_(...)` function associated with a given `Node` object.
         """
-        raise Exception(f"{self.__class__.__name__} :: No visit_{typeof(node).__name__} method")
+        raise Exception(f"{self.__class__.__name__} :: No visit_{type(node).__name__} method")
 
 
 ###########################################
@@ -851,7 +850,7 @@ class Parser:
         node.statements = self.statement_list()
 
         if PRINT_EAT_STACK:
-            print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+            print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
         self.eat(TokenType.EOF)
 
         return node
@@ -866,22 +865,34 @@ class Parser:
 
         results = [node]
 
-        if not isinstance(node, NoOp):
+        while self.current_token.type == TokenType.SEMI:
+            if PRINT_EAT_STACK:
+                print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+            self.eat(TokenType.SEMI)
+            statement = self.statement()
 
-            while self.current_token.type == TokenType.SEMI:
-                if PRINT_EAT_STACK:
-                    print("Calling eat() from line", getframeinfo(currentframe()).lineno)
-                self.eat(TokenType.SEMI)
-                results.append(self.statement())
+            # Specific error handling due to weird no-op behaviour
 
-            if not isinstance(results[-1], NoOp):
-                if PRINT_EAT_STACK:
-                    print("Calling eat() from line", getframeinfo(currentframe()).lineno)
-                self.eat(TokenType.SEMI)
-
-            # Commented out due to unknown behaviour
-            #if self.current_token.type == TokenType.IDENTIFIER:
-            #    self.error()
+            if isinstance(statement, NoOp) and self.current_token.type == TokenType.SEMI:
+                self.error(
+                    error_code=ErrorCode.SYNTAX_ERROR,
+                    token=self.current_token,
+                    message="Too many semicolons!"
+                )
+            elif isinstance(statement, Compound) and self.current_token.type != TokenType.SEMI:
+                self.error(
+                    error_code=ErrorCode.SYNTAX_ERROR,
+                    token=self.current_token,
+                    message="Missing semicolon after compound"
+                )
+            elif isinstance(statement, ProcedureDecl) and self.current_token.type != TokenType.SEMI:
+                self.error(
+                    error_code=ErrorCode.SYNTAX_ERROR,
+                    token=self.current_token,
+                    message="Missing semicolon after procedure"
+                )
+            else:
+                results.append(statement)
 
         return results
 
@@ -909,11 +920,11 @@ class Parser:
         compound_statement -> `BEGIN` statement_list `END`
         """
         if PRINT_EAT_STACK:
-            print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+            print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
         self.eat(TokenType.BEGIN)
         nodes = self.statement_list()
         if PRINT_EAT_STACK:
-            print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+            print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
         self.eat(TokenType.END)
 
         root = Compound()
@@ -928,19 +939,19 @@ class Parser:
                                | `DEFINITION` variable `LPAREN` formal_parameter_list `RPAREN` `RETURNS_OP` type_spec compound_statement
         """
         if PRINT_EAT_STACK:
-            print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+            print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
         self.eat(TokenType.DEFINITION)
 
         procedure_var = self.variable()
 
         if PRINT_EAT_STACK:
-            print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+            print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
         self.eat(TokenType.LPAREN)
 
         params = self.formal_parameter_list()
 
         if PRINT_EAT_STACK:
-            print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+            print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
         self.eat(TokenType.RPAREN)
 
         if self.current_token.type == TokenType.BEGIN:
@@ -952,7 +963,7 @@ class Parser:
         elif self.current_token.type == TokenType.RETURNS_OP:
 
             if PRINT_EAT_STACK:
-                print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+                print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
             self.eat(TokenType.RETURNS_OP)
 
             return_type = self.type_spec()
@@ -984,7 +995,7 @@ class Parser:
         if self.current_token.type == TokenType.ASSIGN:
             assign_op = self.current_token
             if PRINT_EAT_STACK:
-                print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+                print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
             self.eat(TokenType.ASSIGN)
             expr_node = self.expr()
 
@@ -996,7 +1007,7 @@ class Parser:
             node.children.append(VarDecl(type_node, var_node))
             while self.current_token.type == TokenType.COMMA:
                 if PRINT_EAT_STACK:
-                    print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+                    print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
                 self.eat(TokenType.COMMA)
                 var_node = self.variable()
                 node.children.append(VarDecl(type_node, var_node))
@@ -1009,12 +1020,12 @@ class Parser:
         """
         var_node = self.current_token
         if PRINT_EAT_STACK:
-            print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+            print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
         self.eat(TokenType.IDENTIFIER)
 
         assign_op = self.current_token
         if PRINT_EAT_STACK:
-            print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+            print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
         self.eat(TokenType.ASSIGN)
 
         right = self.expr()
@@ -1038,7 +1049,7 @@ class Parser:
 
             while self.current_token.type == TokenType.COMMA:
                 if PRINT_EAT_STACK:
-                    print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+                    print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
                 self.eat(TokenType.COMMA)
                 results.append(self.formal_parameter())
 
@@ -1066,7 +1077,7 @@ class Parser:
         token = self.current_token
         if self.is_type():
             if PRINT_EAT_STACK:
-                print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+                print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
             self.eat(token.type)
         else:
             self.error(
@@ -1096,12 +1107,12 @@ class Parser:
 
             if token.type == TokenType.PLUS:
                 if PRINT_EAT_STACK:
-                    print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+                    print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
                 self.eat(TokenType.PLUS)
 
             elif token.type == TokenType.MINUS:
                 if PRINT_EAT_STACK:
-                    print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+                    print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
                 self.eat(TokenType.MINUS)
 
             node = BinOp(left=node, op=token, right=self.term())
@@ -1120,17 +1131,17 @@ class Parser:
 
             if token.type == TokenType.MULT:
                 if PRINT_EAT_STACK:
-                    print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+                    print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
                 self.eat(TokenType.MULT)
 
             elif token.type == TokenType.INTEGER_DIV:
                 if PRINT_EAT_STACK:
-                    print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+                    print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
                 self.eat(TokenType.INTEGER_DIV)
 
             elif token.type == TokenType.FLOAT_DIV:
                 if PRINT_EAT_STACK:
-                    print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+                    print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
                 self.eat(TokenType.FLOAT_DIV)
 
             node = BinOp(left=node, op=token, right=self.factor())
@@ -1151,7 +1162,7 @@ class Parser:
         # `PLUS` factor
         if token.type == TokenType.PLUS:
             if PRINT_EAT_STACK:
-                print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+                print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
             self.eat(TokenType.PLUS)
             node = UnaryOp(token, self.factor())
             return node
@@ -1159,7 +1170,7 @@ class Parser:
         # `MINUS` factor
         elif token.type == TokenType.MINUS:
             if PRINT_EAT_STACK:
-                print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+                print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
             self.eat(TokenType.MINUS)
             node = UnaryOp(token, self.factor())
             return node
@@ -1167,25 +1178,25 @@ class Parser:
         # `INTEGER_CONST`
         elif token.type == TokenType.INTEGER_CONST:
             if PRINT_EAT_STACK:
-                print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+                print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
             self.eat(TokenType.INTEGER_CONST)
             return Num(token)
 
         # `FLOAT_CONST`
         elif token.type == TokenType.FLOAT_CONST:
             if PRINT_EAT_STACK:
-                print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+                print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
             self.eat(TokenType.FLOAT_CONST)
             return Num(token)
 
         # `LPAREN` expr `RPAREN`
         elif token.type == TokenType.LPAREN:
             if PRINT_EAT_STACK:
-                print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+                print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
             self.eat(TokenType.LPAREN)
             node = self.expr()
             if PRINT_EAT_STACK:
-                print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+                print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
             self.eat(TokenType.RPAREN)
             return node
 
@@ -1200,7 +1211,7 @@ class Parser:
         """
         node = Var(self.current_token)
         if PRINT_EAT_STACK:
-            print("Calling eat() from line", getframeinfo(currentframe()).lineno)
+            print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
         self.eat(TokenType.IDENTIFIER)
         return node
 
