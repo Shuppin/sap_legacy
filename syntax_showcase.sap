@@ -32,9 +32,9 @@ x := /* wow */ ((x+3) / (z-1))*4;
 
 // Unary operations
 x := -x;
-x := +x;
+x := x;
 x := --x;
-x := +++++++----x; // Unary operations are stackable
+x := ----x; // Unary operations are stackable
 
 // Compound statements
 // Currently only acts as grouped code, remains in current scope
@@ -55,6 +55,7 @@ def AlphaA(int a) {
             x := a + b + c + x + y + z;
         };
     };
+    {};
 };
 
 // Function with return type
@@ -64,8 +65,8 @@ def AlphaB(int a) -> int {
 };
 
 // Function without arguments
-def empty_func() {
-
+def empty_func(int f) {
+    int y := 5;
 };
 
 empty_func();

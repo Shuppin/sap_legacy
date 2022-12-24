@@ -1,13 +1,36 @@
-def main(int start_code, int e) {
-    int x := (start_code*14);
+def println(int std_out_code, float e) {
+    // dummy function to represent printing
+    int x := 5 + std_out_code;
 };
 
-def f(int x) {
-    x := x * x;
+def main() {
+    println(5);
 };
 
-int mycode := 5;
-main(mycode*4, 42);
+int x, y, z;
+float w, t, u;
 
-int x := 5;
-f(x);
+int single_decl;
+float single_decl_float;
+
+int single_decl_assign := 5;
+float single_decl_assign_float := 3.14;
+
+x := 3;
+y := -4;
+
+z := 5+5;
+w := 6-3.14;
+t := 7*2.1;
+u := 8/3;
+
+x := x + 1;
+y := y - 1;
+
+z := 5 - -x;
+x := -x;
+
+{int n:=3;};
+
+single_decl := x + y;
+single_decl_float := ((x + y + z) / 2)*u;

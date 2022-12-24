@@ -20,7 +20,15 @@ PRINT_EAT_STACK = False
 PRINT_TREE = True
 PRINT_SCOPE = False
 
+# This defines how errors are treated
+# If true, it will raise an error with the full stack trace,
+# useful for debugging purposes
+# If false, it will print the error normally
 _DEV_RAISE_ERROR_STACK = False
+# Strict semicolons are treated as line terminators and
+# are required after every statement
+# Non-strict semicolon are treated as statement sperators
+_DEV_STRICT_SEMICOLONS = True
 
 # Basic implementation of file name tracking
 current_filename = "<cmdline>"
@@ -37,29 +45,29 @@ class TokenType(Enum):
     Enum class to hold all the token types for SAP language
     """
     # symbols
-    MULT            = '*'
-    INTEGER_DIV     = '//'  # Currently not in use, may be removed in future
-    FLOAT_DIV       = '/'
-    PLUS            = '+'
-    MINUS           = '-'
-    RETURNS_OP      = '->'
-    LPAREN          = '('
-    RPAREN          = ')'
-    ASSIGN          = ':='
-    SEMI            = ';'
-    COLON           = ':'
-    COMMA           = ','
-    BEGIN           = '{'
-    END             = '}'
+    MULT                = '*'
+    INTEGER_DIV         = '//'  # Currently not in use, may be removed in future
+    FLOAT_DIV           = '/'
+    PLUS                = '+'
+    MINUS               = '-'
+    RETURNS_OP          = '->'
+    LPAREN              = '('
+    RPAREN              = ')'
+    ASSIGN              = ':='
+    SEMI                = ';'
+    COLON               = ':'
+    COMMA               = ','
+    BEGIN               = '{'
+    END                 = '}'
     # reserved keywords
-    INTEGER         = 'int'
-    FLOAT           = 'float'
-    DEFINITION      = 'def'
+    INTEGER             = 'int'
+    FLOAT               = 'float'
+    DEFINITION          = 'def'
     # dynamic token types
-    INTEGER_CONST   = 'INTEGER_CONST'
-    FLOAT_CONST     = 'FLOAT_CONST'
-    IDENTIFIER      = 'IDENTIFIER'
-    EOF             = 'EOF'
+    INTEGER_LITERAL     = 'INTEGER_LITERAL'
+    FLOAT_LITERAL       = 'FLOAT_LITERAL'
+    IDENTIFIER          = 'IDENTIFIER'
+    EOF                 = 'EOF'
 
 
 class ErrorCode(Enum):
@@ -76,6 +84,10 @@ class ErrorCode(Enum):
 
 # Temporary
 class GlobalScope(dict):
+    """
+    Temporary class to act as a symbol table for the interpreter,
+    actual symbol tables have not yet been implemented into the interpreter.
+    """
     def __init_subclass__(cls):
         return super().__init_subclass__()
 
@@ -115,26 +127,51 @@ class Token:
 ###########################################
 
 class Error(Exception):
+    """
+    Error base class
+    Inherits from Excpetion so it can be raised using python syntax
+    """
     def __init__(self, error_code: ErrorCode, message: str, token:Token=None, position:list[int]=None, surrounding_lines:list[str]=None):
         self.error_code: ErrorCode = error_code
         self.message: str = f'({self.__class__.__name__[:-5]}) {self.error_code.value}: {message}'
         self.token: Token | None = token
         self.surrounding_lines: list[str] | None = surrounding_lines
+        # We need the position at which the error occured,
+        # It is either extracted from a given token or
+        # passed directly as an array
         self.lineno: int
         self.linecol: int
-        if token is not None:
+        if token is not None and position is None:
             self.lineno = token.lineno
             self.linecol = token.linecol
-        elif position is not None:
+        elif position is not None and token is None:
             self.lineno = position[0]
             self.linecol = position[1]
+        elif token is not None and position is not None:
+            raise ValueError("Too much information passed into Error, either token or position must be given, not both")
         else:
-            raise ValueError("Not enough information parsed into Error()")
+            raise ValueError("Not enough information passed into Error, either token or position must be given")
 
     def trigger(self):
+        """
+        Prints out error along with various bit of information.
+        Output looks like this:
+        ```
+        File '.\integers.sap', position <2:16>
+        │ 1 │ int x := 5;
+        │ 2 │ int y := x + 3 +
+                              ^
+        (Parser) SyntaxError: Expected type <IDENTIFIER> but got type <EOF>
+        ```
+        """
+        # Creates the message with the '~~~' highlighter
+        # For example:
+        # | 1 | inte x := 4;
+        #       ~~~~
         if self.surrounding_lines is not None and self.token is not None and self.token.startcol is not None:
             error_message = [
                 (f'File "{current_filename}", position <{self.lineno}:{self.linecol}>\n'),
+                # The if clauses here will ensure it prints the surrounding lines only if it exists
                 (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno-3)))}{self.lineno-3} │ {self.surrounding_lines[self.lineno-4]}\n" if (self.lineno-4) >= 0 else f""),
                 (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno-2)))}{self.lineno-2} │ {self.surrounding_lines[self.lineno-3]}\n" if (self.lineno-3) >= 0 else f""),
                 (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno-1)))}{self.lineno-1} │ {self.surrounding_lines[self.lineno-2]}\n" if (self.lineno-2) >= 0 else f""),
@@ -144,9 +181,14 @@ class Error(Exception):
                 ]
             error_message = "".join(error_message)
 
+        # Creates the message with the '^' highlighter
+        # For example:
+        # | 1 | int x := 4 $ 3
+        #                  ^
         elif self.surrounding_lines is not None:
             error_message = [
                 (f'File "{current_filename}", position <{self.lineno}:{self.linecol}>\n'),
+                # The if clauses here will ensure it prints the surrounding lines only if it exists
                 (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno-3)))}{self.lineno-3} │ {self.surrounding_lines[self.lineno-4]}\n" if (self.lineno-4) >= 0 else f""),
                 (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno-2)))}{self.lineno-2} │ {self.surrounding_lines[self.lineno-3]}\n" if (self.lineno-3) >= 0 else f""),
                 (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno-1)))}{self.lineno-1} │ {self.surrounding_lines[self.lineno-2]}\n" if (self.lineno-2) >= 0 else f""),
@@ -155,11 +197,14 @@ class Error(Exception):
                 (self.message)
                 ]
             error_message = "".join(error_message)
+        # If no surrounding lines were passed for whatever reason,
+        # just print without surrounding lines
         else:
             error_message = (f'File "{current_filename}", position <{self.lineno}:{self.linecol}>\n'
                              f'   <error fetching lines>\n'
                              f'{self.message}')
 
+        # Raise error or just print it normally
         if _DEV_RAISE_ERROR_STACK:
             print(error_message)
             raise self
@@ -169,14 +214,23 @@ class Error(Exception):
 
 
 class LexerError(Error):
+    """
+    For lexer specific errors
+    """
     pass
 
 
 class ParserError(Error):
+    """
+    For parser specific errors
+    """
     pass
 
 
 class SemanticAnalyserError(Error):
+    """
+    For semantic specific errors
+    """
     pass
 
 
@@ -257,16 +311,25 @@ INTERIOR NODES
 
 
 class Program(Node):
+    """
+    Program() represents a whole program
+    """
     def __init__(self):
         self.statements: list[Node] = []
 
 
 class Compound(Node):
+    """
+    Compound() represents a list of statements surrounded by curly brackets
+    """
     def __init__(self):
         self.children: list[Node] = []
 
 
 class VarDecl(Node):
+    """
+    VarDecl() represents a variable declaration statement
+    """
     def __init__(self, type_node, var_node, assign_op=None, expr_node=None):
         self.type_node: TypeNode = type_node
         self.var_node: Var = var_node
@@ -275,6 +338,9 @@ class VarDecl(Node):
 
 
 class ProcedureDecl(Node):
+    """
+    ProcedureDecl() represents a procedure declaration statement
+    """
     def __init__(self, procedure_var, params, compound_node, return_type=None):
         self.procedure_var: Var = procedure_var
         self.params: list[Param] = params
@@ -283,12 +349,18 @@ class ProcedureDecl(Node):
 
 
 class ProcedureCall(Node):
+    """
+    ProcedureCall() represents a procedure call statement
+    """
     def __init__(self, procedure_var, literal_params):
         self.procedure_var: Var = procedure_var
         self.literal_params: list[Param] = literal_params
 
 
 class AssignOp(Node):
+    """
+    AssignOp() represents an assignment operation
+    """
     def __init__(self, left, op, right):
         self.left: Token = left
         self.op: Token = op
@@ -296,12 +368,18 @@ class AssignOp(Node):
 
 
 class UnaryOp(Node):
+    """
+    UnaryOp() represents a unary operation (one-sided operation) such as `-1`
+    """
     def __init__(self, op, expr):
         self.op: Token = op
         self.expr: Node = expr
 
 
 class BinOp(Node):
+    """
+    BinOp() represents a binary operation (two-sided operation) such as `1+2`
+    """
     def __init__(self, left, op, right):
         self.left: Node = left
         self.op: Token = op
@@ -309,6 +387,9 @@ class BinOp(Node):
 
 
 class Param(Node):
+    """
+    Param() represents a defined argument within a procedure declaration
+    """
     def __init__(self, var_node, type_node):
         self.var_node: Var = var_node
         self.type_node: TypeNode = type_node
@@ -321,24 +402,37 @@ LEAF NODES
 
 
 class TypeNode(Node):
+    """
+    TypeNode() represents a data type
+    """
     def __init__(self, token):
         self.token: Token = token
         self.id = self.token.type.name
 
 
 class Var(Node):
+    """
+    Var() represents a variable
+    """
     def __init__(self, token):
         self.token: Token = token
         self.id = self.token.id
 
 
 class Num(Node):
+    """
+    Num() represents any number-like literal such as `23` or `3.14`
+    """
     def __init__(self, token):
         self.token: Token = token
         self.id: int | str | None = self.token.id
 
 
 class NoOp(Node):
+    """
+    NoOp() represents an empty statement,
+    for example there would be a NoOp between `;;` because semicolons act as seperators
+    """
     pass
 
 
@@ -394,9 +488,16 @@ class ProcedureSymbol(Symbol):
         if len(self.params) == 0:
             return f"<procedure> (id: '{self.name}', parameters: <no params>)"
         else:
-            # Okay, yes this is horrendous don't @me
-            return (f"<procedure> (id: '{self.name}', parameters: "
-                    f"{', '.join(list(map(lambda param: f'({param.var_node.id}, <{param.type_node.id}>)', self.params)))})")
+            # Okay, yes this is (slightly less) horrendous don't @me
+            parameter_list = ', '.join(
+                list(
+                    map(
+                        lambda param: f"('{param.var_node.id}', <{param.type_node.id}>)",
+                        self.params
+                    )
+                )
+            )
+            return (f"<procedure> (id: '{self.name}', parameters: {parameter_list}")
 
 
 class SymbolTable:
@@ -409,6 +510,9 @@ class SymbolTable:
         self.scope_level: int = scope_level
         self.parent_scope: SymbolTable | None = parent_scope
 
+        # The only table with a scope level of 0 should be the
+        # <builtins> table, which represents all the built-in
+        # types. These are defined internally here:
         if self.scope_level == 0:
             self.define(BuiltinSymbol("INTEGER"))
             self.define(BuiltinSymbol("FLOAT"))
@@ -501,11 +605,22 @@ class NodeVisitor:
         """
         Executes the visit function associated with the given node
         """
+        # This function uses some python trickery
+        # to call a specific visit_(...) function
+        # based on the class name from the given
+        # 'node' argument.
+
+        # For example if a given node has the name
+        # 'Var' this function would call 'visit_Var()'
+
+        # If there is no visit_(...) function that
+        # matches the name of a given node then
+        # visitor_not_found() is called instead.
         method_name = "visit_" + type(node).__name__
-        visitor = getattr(self, method_name, self.default_visit)
+        visitor = getattr(self, method_name, self.visitor_not_found)
         return visitor(node)
 
-    def default_visit(self, node: Node):
+    def visitor_not_found(self, node: Node):
         """
         Code gets executed when there is no `visit_(...)` function associated with a given `Node` object.
         """
@@ -530,18 +645,27 @@ class Lexer:
 
     The lexer will generate:
     ```
-    Token[type = type.INTEGER_CONST, id = '2', start_pos = 0]
+    Token[type = type.INTEGER_LITERAL, id = '2', start_pos = 0]
     Token[type = type.PLUS, id = '+', start_pos = 2]
-    Token[type = type.INTEGER_CONST, id = '2', start_pos = 4]
+    Token[type = type.INTEGER_LITERAL, id = '2', start_pos = 4]
     ```
     """
     def __init__(self, text):
         self.text: str = text
-        self.text_lines: list[str] = self.text.split('\n')
         self.pos: int = 0
         self.lineno: int = 1
         self.linecol: int = 0
         self.current_char: str | None = self.text[self.pos]
+
+        # Just self.text split up into a list of each line
+        # Used by the error reporter
+        self.text_lines: list[str] = self.text.split('\n')
+
+        # Used to keep track how many times
+        # the lexer tries to get the next token
+        # even though the pointer is at the end
+        # of the code
+        self.reached_end_counter = 0
 
         self.RESERVED_KEYWORDS: dict = {
             'int': TokenType.INTEGER,
@@ -551,22 +675,46 @@ class Lexer:
 
     # Utility functions
 
-    def error(self):
-        error = LexerError(ErrorCode.SYNTAX_ERROR, f"could not tokenise '{self.current_char}'", position=[self.lineno, self.linecol], surrounding_lines=self.text_lines)
+    def error(self, message=None, char_pos=None):
+        """
+        Create and raise an error object
+        """
+        # Set default error message
+        if message is None:
+            message = f"Could not tokenise '{self.current_char}'"
+        # Set default position
+        if char_pos is None:
+            char_pos=[self.lineno, self.linecol]
+        error = LexerError(
+            ErrorCode.SYNTAX_ERROR,
+            message,
+            position=char_pos,
+            surrounding_lines=self.text_lines
+        )
         error.trigger()
 
     def advance(self):
         """Advance `self.pos` and set `self.current_char`"""
-
         self.pos += 1
         self.linecol += 1
 
+        # If newline
         if self.current_char == "\n":
             self.lineno += 1
             self.linecol = 0
 
+        # If `self.pos` has reached the end of the code
         if self.pos > len(self.text) - 1:
+            # After the lexer has tried multiple times to get
+            # the next token while being at the end of the code.
+            # This behaviour occurs when there is an error with
+            # the lexeical analysis stage.
+            if self.reached_end_counter > 3:
+                print("(Lexer) [CRITICAL] Lexer has reached end of code but is still trying to advance")
+                exit()
+            self.reached_end_counter += 1
             self.current_char = None
+        # Else advance as normal
         else:
             self.current_char = self.text[self.pos]
             
@@ -578,7 +726,7 @@ class Lexer:
         else:
             return self.text[peek_pos]
 
-    # Lexer functions
+    # Lexer utility functions
 
     def skip_whitespace(self):
         """Advances `self.pos` until a non-whitespace character has been reached"""
@@ -586,9 +734,17 @@ class Lexer:
             self.advance()
 
     def skip_multi_comment(self):
-        """Advances `self.pos` until a comment terminator (*/) has been reached"""
+        """Advances `self.pos` until a comment terminator (*/)  or <EOF> has been reached"""
+        start_pos = [self.lineno, self.linecol]
         while not (self.current_char == "*" and self.peek() == "/"):
-                self.advance()
+            self.advance()
+            # If we have reached the end of the code
+            # without reaching a '*/' comment terminator
+            if self.current_char is None:
+                self.error(
+                    message="Unterminated multiline comment",
+                    char_pos=start_pos
+                )
         # Advance twice more to skip over the final "*/"
         self.advance()
         self.advance()
@@ -597,18 +753,19 @@ class Lexer:
         """Advances `self.pos` until a newline has been reached"""
         while self.current_char is not None and not self.current_char == "\n":
             self.advance()
+        # Advance once more over the final '\n'
         self.advance()
 
     def identifier(self) -> Token:
         """Creates and returns an identifier token"""
         result = ""
         start_pos = self.linecol
+        # While the current char is alpha numeric or '_'
         while self.current_char is not None and (self.current_char.isalnum() or self.current_char == "_"):
             result += self.current_char
             self.advance()
 
-        # Checks if `result` is a keyword or not and returns the appropriate type.
-        # Gets the type associated with `result if applicable, else default to `type.IDENTIFIER`
+        # Gets the token type associated with `result` if applicable, else default to `type.IDENTIFIER`
         token_type = self.RESERVED_KEYWORDS.get(result, TokenType.IDENTIFIER)
 
         token = Token(token_type, result, self.lineno, self.linecol, startcol=start_pos)
@@ -627,14 +784,23 @@ class Lexer:
             number += self.current_char
             self.advance()
 
+            has_decimals = False
+
             while self.current_char is not None and self.current_char.isdigit():
                 number += self.current_char
+                has_decimals = True
                 self.advance()
 
-            token = Token(TokenType.FLOAT_CONST, float(number), self.lineno, self.linecol, startcol=start_pos)
+            if has_decimals == False:
+                self.error(
+                    message="Incomplete float",
+                    char_pos=[self.lineno, self.linecol-1]
+                )
+
+            token = Token(TokenType.FLOAT_LITERAL, float(number), self.lineno, self.linecol, startcol=start_pos)
 
         else:
-            token = Token(TokenType.INTEGER_CONST, int(number), self.lineno, self.linecol, startcol=start_pos)
+            token = Token(TokenType.INTEGER_LITERAL, int(number), self.lineno, self.linecol, startcol=start_pos)
 
         return token
 
@@ -770,9 +936,9 @@ class Parser:
 
     For example give the set of tokens (equivalent to `1 + 1`):
     ```
-    Token[type = type.INTEGER_CONST, id = '2', start_pos = 0]
+    Token[type = type.INTEGER_LITERAL, id = '2', start_pos = 0]
     Token[type = type.PLUS, id = '+', start_pos = 2]
-    Token[type = type.INTEGER_CONST, id = '2', start_pos = 4]
+    Token[type = type.INTEGER_LITERAL, id = '2', start_pos = 4]
     ```
 
     The parser will generate:
@@ -781,12 +947,12 @@ class Parser:
         statements: [
             BinOp(
                 left: Num(
-                    token: Token[type = type.INTEGER_CONST, id = '1', start_pos = 0],
+                    token: Token[type = type.INTEGER_LITERAL, id = '1', start_pos = 0],
                     id: 1
                 ),
                 op: Token[type = type.PLUS, id = '+', start_pos = 2],
                 right: Num(
-                    token: Token[type = type.INTEGER_CONST, id = '2', start_pos = 4],
+                    token: Token[type = type.INTEGER_LITERAL, id = '2', start_pos = 4],
                     id: 2
                 )
             )
@@ -799,6 +965,10 @@ class Parser:
         self.text: str = text
         self.lexer: Lexer = Lexer(self.text)
         self.current_token: Token = self.lexer.get_next_token()
+        # Previous token refers to the token before the current token
+        # It is initially set to an empty token
+        # Exclusively used by the error reporter
+        self.previous_token: Token = Token(None,None,0,0)
 
     def error(self, error_code: ErrorCode, token: Token, message):
         error = ParserError(error_code, message, token=token, surrounding_lines=self.lexer.text_lines)
@@ -813,6 +983,7 @@ class Parser:
         if PRINT_TOKENS:
             print(self.current_token, expected_type)
         if self.current_token.type == expected_type:
+            self.previous_token = self.current_token
             self.current_token = self.lexer.get_next_token()
         else:
             if expected_type == TokenType.END:
@@ -847,6 +1018,36 @@ class Parser:
         else:
             return False
 
+    def semicolon_check(self, statement):
+        """
+        Specific error handling due to weird no-op behaviour
+        """
+        if isinstance(statement, NoOp) and self.current_token.type == TokenType.SEMI:
+            self.error(
+                error_code=ErrorCode.SYNTAX_ERROR,
+                token=self.current_token,
+                message="Too many semicolons!"
+            )
+        elif isinstance(statement, Compound) and self.current_token.type != TokenType.SEMI:
+            self.error(
+                error_code=ErrorCode.SYNTAX_ERROR,
+                token=self.previous_token,
+                message="Missing semicolon after compound"
+            )
+        elif isinstance(statement, ProcedureDecl) and self.current_token.type != TokenType.SEMI:
+            self.error(
+                error_code=ErrorCode.SYNTAX_ERROR,
+                token=self.previous_token,
+                message="Missing semicolon after procedure"
+            )
+        elif (not isinstance(statement, NoOp)) and self.current_token.type != TokenType.SEMI:
+            self.error(
+                error_code=ErrorCode.SYNTAX_ERROR,
+                token=self.previous_token,
+                message="Missing semicolon" 
+            )
+
+
     # Grammar definitions
 
     def program(self) -> Program:
@@ -867,9 +1068,10 @@ class Parser:
         """
         statement_list -> statement `SEMI`
                         | statement `SEMI` statement_list
-                        | empty
         """
         node = self.statement()
+        if _DEV_STRICT_SEMICOLONS:
+            self.semicolon_check(node)
 
         results = [node]
 
@@ -878,29 +1080,9 @@ class Parser:
                 print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
             self.eat(TokenType.SEMI)
             statement = self.statement()
-
-            # Specific error handling due to weird no-op behaviour
-
-            if isinstance(statement, NoOp) and self.current_token.type == TokenType.SEMI:
-                self.error(
-                    error_code=ErrorCode.SYNTAX_ERROR,
-                    token=self.current_token,
-                    message="Too many semicolons!"
-                )
-            elif isinstance(statement, Compound) and self.current_token.type != TokenType.SEMI:
-                self.error(
-                    error_code=ErrorCode.SYNTAX_ERROR,
-                    token=self.current_token,
-                    message="Missing semicolon after compound"
-                )
-            elif isinstance(statement, ProcedureDecl) and self.current_token.type != TokenType.SEMI:
-                self.error(
-                    error_code=ErrorCode.SYNTAX_ERROR,
-                    token=self.current_token,
-                    message="Missing semicolon after procedure"
-                )
-            else:
-                results.append(statement)
+            if _DEV_STRICT_SEMICOLONS:
+                self.semicolon_check(statement)
+            results.append(statement)
 
         return results
 
@@ -911,6 +1093,7 @@ class Parser:
                    | procedure_call
                    | variable_declaration
                    | variable_assignment
+                   | empty
         """
         if self.current_token.type == TokenType.BEGIN:
             node = self.compound_statement()
@@ -1045,6 +1228,10 @@ class Parser:
             expr_node = self.expr()
 
             node = VarDecl(type_node, var_node, assign_op, expr_node)
+        
+        # type_spec variable 
+        elif self.current_token.type == TokenType.SEMI:
+            node = VarDecl(type_node, var_node)
 
         # type_spec variable (`COMMA` variable)*
         else:
@@ -1195,43 +1382,34 @@ class Parser:
 
     def factor(self) -> Node:
         """
-        factor -> `PLUS` factor
-                | `MINUS` factor
-                | `INTEGER_CONST`
+        factor -> `MINUS` factor
+                | `INTEGER_LITERAL`
                 | `FLOAT_CONST` 
                 | `LPAREN` expr `RPAREN`
                 | variable
         """
         token = self.current_token
 
-        # `PLUS` factor
-        if token.type == TokenType.PLUS:
-            if PRINT_EAT_STACK:
-                print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
-            self.eat(TokenType.PLUS)
-            node = UnaryOp(token, self.factor())
-            return node
-
         # `MINUS` factor
-        elif token.type == TokenType.MINUS:
+        if token.type == TokenType.MINUS:
             if PRINT_EAT_STACK:
                 print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
             self.eat(TokenType.MINUS)
             node = UnaryOp(token, self.factor())
             return node
 
-        # `INTEGER_CONST`
-        elif token.type == TokenType.INTEGER_CONST:
+        # `INTEGER_LITERAL`
+        elif token.type == TokenType.INTEGER_LITERAL:
             if PRINT_EAT_STACK:
                 print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
-            self.eat(TokenType.INTEGER_CONST)
+            self.eat(TokenType.INTEGER_LITERAL)
             return Num(token)
 
         # `FLOAT_CONST`
-        elif token.type == TokenType.FLOAT_CONST:
+        elif token.type == TokenType.FLOAT_LITERAL:
             if PRINT_EAT_STACK:
                 print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
-            self.eat(TokenType.FLOAT_CONST)
+            self.eat(TokenType.FLOAT_LITERAL)
             return Num(token)
 
         # `LPAREN` expr `RPAREN`
@@ -1270,13 +1448,13 @@ class Parser:
 
         statement_list -> statement `SEMI`
                         | statement `SEMI` statement_list
-                        | empty
 
         statement -> compound_statement
                    | procedure_declaration
                    | procedure_call
                    | variable_declaration
                    | variable_assignment
+                   | empty
 
         compound_statement -> `BEGIN` statement_list `END`
 
@@ -1305,9 +1483,8 @@ class Parser:
 
         term -> factor ((`MUL`|`INTEGER_DIV`|`FLOAT_DIV`) factor)*
 
-        factor -> `PLUS` factor
-                | `MINUS` factor
-                | `INTEGER_CONST`
+        factor -> `MINUS` factor
+                | `INTEGER_LITERAL`
                 | `FLOAT_CONST` 
                 | `LPAREN` expr `RPAREN`
                 | variable
@@ -1615,9 +1792,7 @@ class Driver:
 
         elif len(sys.argv) == 2:
             path = sys.argv[1]
-            print(path)
             if os.path.isfile(path):
-                print("here")
                 self.filename = path
                 self.mode = "file"
         else:
