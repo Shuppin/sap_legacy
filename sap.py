@@ -677,7 +677,7 @@ class Lexer:
 
     def error(self, message=None, char_pos=None):
         """
-        Create and raise an error object
+        Create and raise a LexerError object
         """
         # Set default error message
         if message is None:
@@ -776,14 +776,19 @@ class Lexer:
         """Consumes a number from the input code and returns it"""
         number = ''
         start_pos = self.linecol
+        # While the current char is a digit
         while self.current_char is not None and self.current_char.isdigit():
             number += self.current_char
             self.advance()
 
+        # If there is a decimal that would indicate a float.
         if self.current_char == ".":
             number += self.current_char
             self.advance()
 
+            # It is possible for a float to have no leading or
+            # trailing digits, which is handled with the
+            # `has_decimals` check
             has_decimals = False
 
             while self.current_char is not None and self.current_char.isdigit():
@@ -829,7 +834,7 @@ class Lexer:
                 self.skip_comment()
                 continue
 
-            # Terminals
+            # Size-variant symbols
 
             if self.current_char.isalpha() or self.current_char == "_":
                 return self.identifier()
@@ -971,6 +976,9 @@ class Parser:
         self.previous_token: Token = Token(None,None,0,0)
 
     def error(self, error_code: ErrorCode, token: Token, message):
+        """
+        Create and raise a ParserError object
+        """
         error = ParserError(error_code, message, token=token, surrounding_lines=self.lexer.text_lines)
         error.trigger()
 
