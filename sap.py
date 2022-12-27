@@ -17,8 +17,9 @@ DEFAULT_FILENAME = "procedure_calls.sap"
 
 PRINT_TOKENS = False
 PRINT_EAT_STACK = False
-PRINT_TREE = True
+PRINT_TREE = False
 PRINT_SCOPE = False
+PRINT_CALL_STACK = True
 
 # This defines how errors are treated
 # If true, it will raise an error with the full stack trace,
@@ -27,7 +28,8 @@ PRINT_SCOPE = False
 _DEV_RAISE_ERROR_STACK = False
 # Strict semicolons are treated as line terminators and
 # are required after every statement
-# Non-strict semicolon are treated as statement sperators
+# Non-strict semicolons are treated as statement sperators
+# and are only required between statements
 _DEV_STRICT_SEMICOLONS = True
 
 # Basic implementation of file name tracking
@@ -44,6 +46,8 @@ class TokenType(Enum):
     """
     Enum class to hold all the token types for SAP language
     """
+    # These values do not represent how the lexer identifies tokens,
+    # they are just represent what these tokens look like
     # symbols
     MULT                = '*'
     INTEGER_DIV         = '//'  # Currently not in use, may be removed in future
@@ -70,6 +74,10 @@ class TokenType(Enum):
     EOF                 = 'EOF'
 
 
+class ActivationRecordType(Enum):
+    PROGRAM = "PROGRAM"
+
+
 class ErrorCode(Enum):
     SYNTAX_ERROR        = "SyntaxError"
     NAME_ERROR          = "NameError"
@@ -91,7 +99,7 @@ class GlobalScope(dict):
     def __init_subclass__(cls):
         return super().__init_subclass__()
 
-    def __str__(self):
+    def __str__(self) -> str:
         text = []
 
         for key, value in sorted(self.items(), key=lambda x: x[1][0], reverse=True):
@@ -114,7 +122,7 @@ class Token:
         self.startcol: int | None = startcol
 
     def __str__(self) -> str:
-        return f"Token[type = {self.type}, id = '{self.id}', position = <{self.lineno}:{self.linecol}>]"
+        return f"Token[type = {self.type}, id = {repr(self.id)}, position = <{self.lineno}:{self.linecol}>]"
 
     def __repr__(self) -> str:
         return repr(self.__str__())
@@ -126,7 +134,7 @@ class Token:
 #                                         #
 ###########################################
 
-class Error(Exception):
+class BaseError(Exception):
     """
     Error base class
     Inherits from Excpetion so it can be raised using python syntax
@@ -213,21 +221,21 @@ class Error(Exception):
             exit()
 
 
-class LexerError(Error):
+class LexerError(BaseError):
     """
     For lexer specific errors
     """
     pass
 
 
-class ParserError(Error):
+class ParserError(BaseError):
     """
     For parser specific errors
     """
     pass
 
 
-class SemanticAnalyserError(Error):
+class SemanticAnalyserError(BaseError):
     """
     For semantic specific errors
     """
@@ -293,7 +301,7 @@ class Node:
                         text += self._print_children(node.__dict__, depth + 2)
                         text += "   " * (depth + 1) + "),\n"
                     else:
-                        raise TypeError(f"Cannot print type '{type(node)}'")
+                        raise TypeError(f"Cannot print type {repr(type(node))}")
                 text += "   " * depth + "],\n"
             else:
                 text += ("   " * depth + str(key) + ": " + str(value) + ",\n")
@@ -438,11 +446,12 @@ class NoOp(Node):
 
 ###########################################
 #                                         #
-#   Symbol table code                     #
+#   Symbols                               #
 #                                         #
 ###########################################
 
-class Symbol:
+
+class BaseSymbol:
     """
     Symbol base class
     """
@@ -450,33 +459,33 @@ class Symbol:
         self.name: str = name
         self.type: BuiltinSymbol | None = datatype
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.name
 
 
-class BuiltinSymbol(Symbol):
+class BuiltinSymbol(BaseSymbol):
     """
     Symbol which represents built in types
     """
     def __init__(self, name):
         super().__init__(name)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"<builtin> {self.name}"
 
 
-class VarSymbol(Symbol):
+class VarSymbol(BaseSymbol):
     """
     Symbol which represents user-defined variables
     """
     def __init__(self, name, datatype):
         super().__init__(name, datatype)
 
-    def __str__(self):
-        return f"<variable> (id: '{self.name}', type: '{self.type.name}')"
+    def __str__(self) -> str:
+        return f"<variable> (id: {repr(self.name)}, type: {repr(self.type.name)})"
 
 
-class ProcedureSymbol(Symbol):
+class ProcedureSymbol(BaseSymbol):
     """
     Symbol which represents procedure declarations
     """
@@ -484,20 +493,27 @@ class ProcedureSymbol(Symbol):
         super().__init__(name)
         self.params: list[Param] = params
 
-    def __str__(self):
+    def __str__(self) -> str:
         if len(self.params) == 0:
-            return f"<procedure> (id: '{self.name}', parameters: <no params>)"
+            return f"<procedure> (id: {repr(self.name)}, parameters: <no params>)"
         else:
             # Okay, yes this is (slightly less) horrendous don't @me
             parameter_list = ', '.join(
                 list(
                     map(
-                        lambda param: f"('{param.var_node.id}', <{param.type_node.id}>)",
+                        lambda param: f"({repr(param.var_node.id)}, <{param.type_node.id}>)",
                         self.params
                     )
                 )
             )
-            return (f"<procedure> (id: '{self.name}', parameters: {parameter_list}")
+            return (f"<procedure> (id: {repr(self.name)}, parameters: {parameter_list}")
+
+
+###########################################
+#                                         #
+#   Symbol table code                     #
+#                                         #
+###########################################
 
 
 class SymbolTable:
@@ -505,7 +521,7 @@ class SymbolTable:
     Class to store all the program symbols
     """
     def __init__(self, scope_name, scope_level, parent_scope=None):
-        self._symbols: dict[str, Symbol] = {}
+        self._symbols: dict[str, BaseSymbol] = {}
         self.scope_name: str = scope_name
         self.scope_level: int = scope_level
         self.parent_scope: SymbolTable | None = parent_scope
@@ -517,7 +533,7 @@ class SymbolTable:
             self.define(BuiltinSymbol("INTEGER"))
             self.define(BuiltinSymbol("FLOAT"))
 
-    def __str__(self):
+    def __str__(self) -> str:
         # Add header information
         text = "\nSCOPE (SCOPED SYMBOL TABLE):\n"
         text += f"Scope name    : {self.scope_name}\n"
@@ -564,13 +580,13 @@ class SymbolTable:
 
         return text
 
-    def define(self, symbol: Symbol):
+    def define(self, symbol: BaseSymbol):
         """
         Adds a symbol to the symbol table
         """
         self._symbols[symbol.name] = symbol
 
-    def lookup(self, symbol_name: str, search_parent_scopes: bool = True) -> Symbol | None:
+    def lookup(self, symbol_name: str, search_parent_scopes: bool = True) -> BaseSymbol | None:
         """
         Will search for the given symbol name in `self._symbols` and
         then it will search its parent scopes.
@@ -586,6 +602,87 @@ class SymbolTable:
             return self.parent_scope.lookup(symbol_name)
         else:
             return None
+
+
+###########################################
+#                                         #
+#   Memory system                         #
+#                                         #
+###########################################
+
+
+class Member:
+    def __init__(self, name: str, value: Any, datatype: str):
+        self.name: str = name
+        self.value: Any = value
+        # May update to Symbol in future
+        self.datatype: str = datatype
+
+    def __str__(self):
+        return f"<{self.datatype}> {self.name} = {repr(self.value)}"
+
+
+class ActivationRecord:
+    def __init__(self, name: str, ar_type: ActivationRecordType, scope_level: int):
+        self.name: str = name
+        self.ar_type: ActivationRecordType = ar_type
+        self.scope_level: int = scope_level
+        self._members: dict[str, Member] = {}
+
+    def __str__(self):
+        message = "\nACTIVATION RECORD:\n"
+        message += f"Scope name    : {self.name}\n"
+        message += f"Scope level   : {self.scope_level}\n"
+        message += f"AR type       : {self.ar_type.value}\n\n"
+        message += "Activation record contents\n"
+        message += "--------------------------\n"
+        if self._members == {}:
+            message += "\n    <empty>\n"
+        else:
+            member_objects: list[Member]
+            _, member_objects = zip(*self._members.items())
+            grouped_members = defaultdict(list)
+            for member in member_objects:
+                grouped_members[member.datatype].append(member)
+
+            for _, members in grouped_members.items():
+                message+="\n"
+                for member in members:
+                    message += "    " + str(member) + "\n"
+
+        message = message.split("\n")
+        longest_string_length = len(max(message, key=len))
+        message.insert(2, "=" * (longest_string_length + 1))
+        message.append("=" * (longest_string_length + 1) + "\n")
+        message = "\n".join(message)
+
+        return message
+
+    def set(self, member: Member):
+        self._members[member.name] = member
+
+    def get(self, key: str) -> Member:
+        return self._members.get(key)
+
+
+class CallStack:
+    def __init__(self):
+        self._records: list[ActivationRecord] = []
+
+    def __str__(self) -> str:
+        message = f"\nCALL STACK (File \"{current_filename}\")\n"
+        for record in self._records:
+            message += str(record)
+        return message
+
+    def push(self, ar: ActivationRecord):
+        self._records.append(ar)
+
+    def pop(self) -> ActivationRecord:
+        return self._records.pop()
+
+    def peek(self) -> ActivationRecord:
+        return self._records[-1]
 
 
 ###########################################
@@ -681,7 +778,7 @@ class Lexer:
         """
         # Set default error message
         if message is None:
-            message = f"Could not tokenise '{self.current_char}'"
+            message = f"Could not tokenise {repr(self.current_char)}"
         # Set default position
         if char_pos is None:
             char_pos=[self.lineno, self.linecol]
@@ -1029,6 +1126,14 @@ class Parser:
     def semicolon_check(self, statement):
         """
         Specific error handling due to weird no-op behaviour
+
+        Specifically, it checks the following:
+        - Multiple semicolons next to each other
+        - Missing semicolons after compound statements
+        - Missing semicolons after procedure declarations
+        - Missing semicolons after any other statement
+
+        Note: compounds and procedures are handled seprately for more accurate error reporting
         """
         if isinstance(statement, NoOp) and self.current_token.type == TokenType.SEMI:
             self.error(
@@ -1052,9 +1157,8 @@ class Parser:
             self.error(
                 error_code=ErrorCode.SYNTAX_ERROR,
                 token=self.previous_token,
-                message="Missing semicolon" 
+                message=f"Missing semicolon" 
             )
-
 
     # Grammar definitions
 
@@ -1201,8 +1305,12 @@ class Parser:
 
         literal_params = []
         if self.current_token.type != TokenType.RPAREN:
+            # Parameters can either be single variables, or full arithmetic expressions,
+            # both of which are valid `expr()`'s
             literal_params.append(self.expr())
 
+            # If there is a comma after the first param,
+            # that means there should be more parameters after it
             while self.current_token.type == TokenType.COMMA:
                 if PRINT_EAT_STACK:
                     print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
@@ -1323,7 +1431,7 @@ class Parser:
             self.error(
                 error_code=ErrorCode.TYPE_ERROR,
                 token=self.current_token,
-                message=f"'{self.current_token.id}' is not a valid type!"
+                message=f"{repr(self.current_token.id)} is not a valid type!"
             )
 
         node = TypeNode(token)
@@ -1501,12 +1609,6 @@ class Parser:
         ```
         """
         node = self.program()
-        if self.current_token.type != TokenType.EOF:
-            self.error(
-                error_code=ErrorCode.SYNTAX_ERROR,
-                token=self.current_token,
-                message=f"Program terminated with <{self.current_token.type.value}>, not <{TokenType.EOF}>"
-            )
 
         return node
 
@@ -1521,15 +1623,20 @@ class SemanticAnalyser(NodeVisitor):
     """
     Constructs the symbol table and performs type-checks before runtime
     """
-    def __init__(self, text):
+    def __init__(self, text: str):
         self.text_lines: list[str] = text.split('\n')
         self.current_scope: SymbolTable | None = None
 
     def error(self, error_code: ErrorCode, token: Token, message):
+        """
+        Create and raise a SemanticAnalyserError object
+        """
         error = SemanticAnalyserError(error_code, message, token, surrounding_lines=self.text_lines)
         error.trigger()
 
     def visit_Program(self, node: Program):
+        # Create new symbol tables for the program
+        # Might move <builtins> declaration to a seperate place when modules are added
         builtin_scope = SymbolTable(scope_name="<builtins>", scope_level=0)
         global_scope = SymbolTable(scope_name="<global>", scope_level=1, parent_scope=builtin_scope)
         self.current_scope = global_scope
@@ -1613,7 +1720,7 @@ class SemanticAnalyser(NodeVisitor):
             self.error(
                 error_code=ErrorCode.NAME_ERROR,
                 token=node.left,
-                message=f"Variable {repr(var_id)} does not exist"
+                message=f"Variable {repr(var_id)} was never initialised"
             )
 
         self.visit(node.right)
@@ -1646,7 +1753,7 @@ class SemanticAnalyser(NodeVisitor):
             self.error(
                 error_code=ErrorCode.NAME_ERROR,
                 token=node.token,
-                message=f"Variable {repr(var_id)} does not exist"
+                message=f"Variable {repr(var_id)} was never initialised"
             )
         else:
             return var_symbol
@@ -1676,7 +1783,8 @@ class Interpreter(NodeVisitor):
     It also handles type-checking at runtime
     """
 
-    global_scope = GlobalScope()
+    def __init__(self):
+        self.call_stack = CallStack()
 
     def interpret(self, tree: Node):
         """
@@ -1687,8 +1795,23 @@ class Interpreter(NodeVisitor):
         return self.visit(tree)
 
     def visit_Program(self, node: Program):
+        program_name = current_filename
+        if program_name.endswith(".sap"):
+            program_name = program_name[:-4]
+        ar = ActivationRecord(
+            name=program_name,
+            ar_type=ActivationRecordType.PROGRAM,
+            scope_level=1
+        )
+
+        self.call_stack.push(ar)
+
         for child in node.statements:
             self.visit(child)
+
+        print(ar)
+
+        self.call_stack.pop()
 
     def visit_Compound(self, node: Compound):
         for child in node.children:
@@ -1698,10 +1821,26 @@ class Interpreter(NodeVisitor):
         variable_id = node.var_node.id
         variable_type_name = node.type_node.id
 
+        current_ar = self.call_stack.peek()
+
         if node.expr_node is not None:
-            self.global_scope[variable_id] = [variable_type_name, self.visit(node.expr_node)]
+            var_value = self.visit(node.expr_node)
+
+            current_ar.set(
+                Member(
+                    name=variable_id,
+                    value=var_value,
+                    datatype=variable_type_name
+                )
+            )
         else:
-            self.global_scope[variable_id] = [variable_type_name, None]
+            current_ar.set(
+                Member(
+                    name=variable_id,
+                    value=None,
+                    datatype=variable_type_name
+                )
+            )
 
     def visit_ProcedureDecl(self, node):
         pass
@@ -1711,10 +1850,20 @@ class Interpreter(NodeVisitor):
 
     def visit_AssignOp(self, node: AssignOp):
         variable_id = node.left.id
-        if variable_id in self.global_scope:
-            self.global_scope[variable_id][1] = self.visit(node.right)
-        else:
-            raise ValueError("Interpreter :: Attempted to assign value to uninitialised variable!")
+        variable_value = self.visit(node.right)
+
+        current_ar = self.call_stack.peek()
+        current_ar.set(
+            Member(
+                variable_id,
+                variable_value,
+                "[DEV] Add typing already!"
+            )
+        )
+        #if variable_id in self.global_scope:
+        #    self.global_scope[variable_id][1] = self.visit(node.right)
+        #else:
+        #    raise ValueError("Interpreter :: Attempted to assign value to uninitialised variable!")
 
     def visit_UnaryOp(self, node: UnaryOp):
         if node.op.type == TokenType.PLUS:
@@ -1740,11 +1889,14 @@ class Interpreter(NodeVisitor):
 
     def visit_Var(self, node: Var):
         variable_id = node.id
-        val = self.global_scope.get(variable_id)
-        if val is None:
-            raise NameError("Interpreter :: " + repr(variable_id))
+        current_ar = self.call_stack.peek()
+        variable = current_ar.get(variable_id)
+        if variable is None:
+            raise NameError(f"Interpreter :: could not find {repr(variable_id)} in current frame")
+        elif variable.value is None:
+            raise NameError(f"Interpreter :: {repr(variable_id)} has no value!")
         else:
-            return val[1]
+            return variable.value
 
     def visit_Num(self, node: Num):
         return node.id
@@ -1819,10 +1971,10 @@ class Driver:
         symbol_table.visit(tree)
         interpreter.interpret(tree)
 
-        print()
-        print("Global vars (doesn't account for functions):")
-        print(interpreter.global_scope)
-        print()
+        #print()
+        #print("Global vars (doesn't account for functions):")
+        #print(interpreter.global_scope)
+        #print()
 
     def cmdline_input(self):
         """

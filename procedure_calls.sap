@@ -3,7 +3,7 @@ def println(int std_out_code, float e) {
     int x := 5 + std_out_code;
 };
 
-def main() {
+def main() -> int {
     println(5);
 };
 
@@ -34,3 +34,7 @@ x := -x;
 
 single_decl := x + y;
 single_decl_float := ((x + y + z) / 2)*u;
+
+main();
+
+println(z, 3.14);
