@@ -1,26 +1,37 @@
 from __future__ import annotations
 
-import sys
-import os
+import logging
 
-from inspect import currentframe, getframeinfo
-from collections import defaultdict
-from typing import Any
-from enum import Enum
+from collections    import defaultdict
+from enum           import Enum
+from inspect        import currentframe
+from inspect        import getframeinfo
+from os.path        import isfile
+from sys            import argv
+from typing         import Any
+from time           import time as current_time
 
-# Constants
+### Constants
 
 # The valid modes are: "file" or "cmdline"
 MODE = "file"
 
-DEFAULT_FILENAME = "procedure_calls.sap"
+# Should the program output a log
+LOGGING_ENABLED = True
 
-PRINT_TOKENS = False
-PRINT_EAT_STACK = False
-PRINT_TREE = False
-PRINT_SCOPE = False
-PRINT_CALL_STACK = True
+# Logging levels
+LOGGING_VERBOSE = 9
+LOGGING_HIGHLY_VERBOSE = 8
+LOGGING_EAT_STACK = 7
+LOGGING_ALL = 5
 
+# Anything at this level or above it will be
+# outputted to the 'runtime.log' file
+LOGGING_CURRENT_LEVEL = LOGGING_VERBOSE
+
+# If no file was specified in the arguments, use this instead
+# Overrides default cmdline behaviour
+_DEV_DEFAULT_FILENAME = "procedure_calls.sap"
 # This defines how errors are treated
 # If true, it will raise an error with the full stack trace,
 # useful for debugging purposes
@@ -28,7 +39,7 @@ PRINT_CALL_STACK = True
 _DEV_RAISE_ERROR_STACK = False
 # Strict semicolons are treated as line terminators and
 # are required after every statement
-# Non-strict semicolons are treated as statement sperators
+# Non-strict semicolons are treated as statement separators
 # and are only required between statements
 _DEV_STRICT_SEMICOLONS = True
 
@@ -49,29 +60,47 @@ class TokenType(Enum):
     # These values do not represent how the lexer identifies tokens,
     # they are just represent what these tokens look like
     # symbols
-    MULT                = '*'
-    INTEGER_DIV         = '//'  # Currently not in use, may be removed in future
-    FLOAT_DIV           = '/'
-    PLUS                = '+'
-    MINUS               = '-'
-    RETURNS_OP          = '->'
-    LPAREN              = '('
-    RPAREN              = ')'
-    ASSIGN              = ':='
-    SEMI                = ';'
-    COLON               = ':'
-    COMMA               = ','
-    BEGIN               = '{'
-    END                 = '}'
+    MULT            = '*'
+    INTEGER_DIV     = '//'  # Currently not in use, may be removed in future
+    FLOAT_DIV       = '/'
+    PLUS            = '+'
+    MINUS           = '-'
+    RETURNS_OP      = '->'
+    LPAREN          = '('
+    RPAREN          = ')'
+    ASSIGN          = ':='
+    SEMI            = ';'
+    COLON           = ':'
+    COMMA           = ','
+    BEGIN           = '{'
+    END             = '}'
     # reserved keywords
-    INTEGER             = 'int'
-    FLOAT               = 'float'
-    DEFINITION          = 'def'
+    INTEGER         = 'int'
+    FLOAT           = 'float'
+    DEFINITION      = 'def'
     # dynamic token types
-    INTEGER_LITERAL     = 'INTEGER_LITERAL'
-    FLOAT_LITERAL       = 'FLOAT_LITERAL'
-    IDENTIFIER          = 'IDENTIFIER'
-    EOF                 = 'EOF'
+    INTEGER_LITERAL = 'INTEGER_LITERAL'
+    FLOAT_LITERAL   = 'FLOAT_LITERAL'
+    IDENTIFIER      = 'IDENTIFIER'
+    EOF             = 'EOF'
+
+
+class DataType(Enum):
+    UNDEFINED   = "UNDEFINED"
+    INTEGER     = "INTEGER"
+    FLOAT       = "FLOAT"
+
+    @classmethod
+    def from_tokentype(cls, tokentype: TokenType):
+        type_mapping = {
+            TokenType.INTEGER: cls.INTEGER,
+            TokenType.FLOAT: cls.FLOAT
+        }
+        datatype = type_mapping.get(tokentype)
+        if datatype is None:
+            raise TypeError(f"TokenType {repr(tokentype)} does not map to a DataType")
+        else:
+            return datatype
 
 
 class ActivationRecordType(Enum):
@@ -79,9 +108,9 @@ class ActivationRecordType(Enum):
 
 
 class ErrorCode(Enum):
-    SYNTAX_ERROR        = "SyntaxError"
-    NAME_ERROR          = "NameError"
-    TYPE_ERROR          = "TypeError"
+    SYNTAX_ERROR    = "SyntaxError"
+    NAME_ERROR      = "NameError"
+    TYPE_ERROR      = "TypeError"
 
 
 ###########################################
@@ -90,42 +119,41 @@ class ErrorCode(Enum):
 #                                         #
 ###########################################
 
-# Temporary
-class GlobalScope(dict):
-    """
-    Temporary class to act as a symbol table for the interpreter,
-    actual symbol tables have not yet been implemented into the interpreter.
-    """
-    def __init_subclass__(cls):
-        return super().__init_subclass__()
-
-    def __str__(self) -> str:
-        text = []
-
-        for key, value in sorted(self.items(), key=lambda x: x[1][0], reverse=True):
-            text.append("  <" + str(value[0]) + "> " + str(key) + " = " + str(value[1]))
-
-        return "\n".join(text)
-
-
 class Token:
     """
     Token data class
 
     Simple data class to hold information about a token
     """
-    def __init__(self, datatype: TokenType, id: Any, lineno: int, linecol: int, startcol: int | None = None):
-        self.type: TokenType = datatype
+    def __init__(self, tokentype: TokenType, id: Any, lineno: int, linecol: int, startcol: int | None = None):
+        self.type: TokenType = tokentype
         self.id: Any = id
         self.lineno: int = lineno
         self.linecol: int = linecol
         self.startcol: int | None = startcol
+        log(f"Token: created {str(self)}", level=LOGGING_ALL, stackoffset=1)
 
     def __str__(self) -> str:
         return f"Token[type = {self.type}, id = {repr(self.id)}, position = <{self.lineno}:{self.linecol}>]"
 
     def __repr__(self) -> str:
         return repr(self.__str__())
+
+
+class Member:
+    """
+    Member object
+
+    Data class to represent item within activation record
+    """
+    def __init__(self, name: str, value: Any, datatype: str):
+        self.name: str = name
+        self.value: Any = value
+        # May update to Symbol in future
+        self.datatype: str = datatype
+
+    def __str__(self):
+        return f"<{self.datatype}> {self.name} = {repr(self.value)}"
 
 
 ###########################################
@@ -137,14 +165,14 @@ class Token:
 class BaseError(Exception):
     """
     Error base class
-    Inherits from Excpetion so it can be raised using python syntax
+    Inherits from Excpetion, so it can be raised using python syntax
     """
     def __init__(self, error_code: ErrorCode, message: str, token:Token=None, position:list[int]=None, surrounding_lines:list[str]=None):
         self.error_code: ErrorCode = error_code
         self.message: str = f'({self.__class__.__name__[:-5]}) {self.error_code.value}: {message}'
         self.token: Token | None = token
         self.surrounding_lines: list[str] | None = surrounding_lines
-        # We need the position at which the error occured,
+        # We need the position at which the error occurred,
         # It is either extracted from a given token or
         # passed directly as an array
         self.lineno: int
@@ -159,6 +187,7 @@ class BaseError(Exception):
             raise ValueError("Too much information passed into Error, either token or position must be given, not both")
         else:
             raise ValueError("Not enough information passed into Error, either token or position must be given")
+        log(f"{type(self).__name__}.__init__() complete", stackoffset=1)
 
     def trigger(self):
         """
@@ -184,7 +213,7 @@ class BaseError(Exception):
                 (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno-2)))}{self.lineno-2} │ {self.surrounding_lines[self.lineno-3]}\n" if (self.lineno-3) >= 0 else f""),
                 (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno-1)))}{self.lineno-1} │ {self.surrounding_lines[self.lineno-2]}\n" if (self.lineno-2) >= 0 else f""),
                 (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno  )))}{self.lineno  } │ {self.surrounding_lines[self.lineno-1]}\n"),
-                (f"   {' '*len(str(self.lineno+2))}  {' '*(self.token.startcol)} {'~'*(self.linecol-self.token.startcol)}\n"),
+                (f"   {' '*len(str(self.lineno+2))}  {' ' * self.token.startcol} {'~' * (self.linecol - self.token.startcol)}\n"),
                 (self.message)
                 ]
             error_message = "".join(error_message)
@@ -201,7 +230,7 @@ class BaseError(Exception):
                 (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno-2)))}{self.lineno-2} │ {self.surrounding_lines[self.lineno-3]}\n" if (self.lineno-3) >= 0 else f""),
                 (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno-1)))}{self.lineno-1} │ {self.surrounding_lines[self.lineno-2]}\n" if (self.lineno-2) >= 0 else f""),
                 (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno  )))}{self.lineno  } │ {self.surrounding_lines[self.lineno-1]}\n"),
-                (f"   {' '*len(str(self.lineno+2))}  {' '*(self.linecol)} ^\n"),
+                (f"   {' '*len(str(self.lineno+2))}  {' '*self.linecol} ^\n"),
                 (self.message)
                 ]
             error_message = "".join(error_message)
@@ -211,6 +240,9 @@ class BaseError(Exception):
             error_message = (f'File "{current_filename}", position <{self.lineno}:{self.linecol}>\n'
                              f'   <error fetching lines>\n'
                              f'{self.message}')
+
+        log(f"{type(self).__name__}: Successfully constructed error message")
+        log(f"{type(self).__name__}: Program terminating with a success state", level=logging.INFO)
 
         # Raise error or just print it normally
         if _DEV_RAISE_ERROR_STACK:
@@ -312,13 +344,23 @@ class Node:
         return text
 
 
-"""
-INTERIOR NODES
-(in order of precedence)
-"""
+class InteriorNode(Node):
+    """
+    Interior nodes will always have other children
+    nodes connected to them (like branches on a tree)
+    """
+    pass
 
 
-class Program(Node):
+class LeafNode(Node):
+    """
+    Leaf nodes do not have any children (like leaves on a tree)
+    """
+    def __init__(self, token: Token):
+        self.token: Token = token
+
+
+class Program(InteriorNode):
     """
     Program() represents a whole program
     """
@@ -326,7 +368,7 @@ class Program(Node):
         self.statements: list[Node] = []
 
 
-class Compound(Node):
+class Compound(InteriorNode):
     """
     Compound() represents a list of statements surrounded by curly brackets
     """
@@ -334,7 +376,7 @@ class Compound(Node):
         self.children: list[Node] = []
 
 
-class VarDecl(Node):
+class VarDecl(InteriorNode):
     """
     VarDecl() represents a variable declaration statement
     """
@@ -345,7 +387,7 @@ class VarDecl(Node):
         self.expr_node: Node | None = expr_node
 
 
-class ProcedureDecl(Node):
+class ProcedureDecl(InteriorNode):
     """
     ProcedureDecl() represents a procedure declaration statement
     """
@@ -356,7 +398,7 @@ class ProcedureDecl(Node):
         self.compound_node: Compound = compound_node
 
 
-class ProcedureCall(Node):
+class ProcedureCall(InteriorNode):
     """
     ProcedureCall() represents a procedure call statement
     """
@@ -365,7 +407,7 @@ class ProcedureCall(Node):
         self.literal_params: list[Param] = literal_params
 
 
-class AssignOp(Node):
+class AssignOp(InteriorNode):
     """
     AssignOp() represents an assignment operation
     """
@@ -375,7 +417,7 @@ class AssignOp(Node):
         self.right: Node = right
 
 
-class UnaryOp(Node):
+class UnaryOp(InteriorNode):
     """
     UnaryOp() represents a unary operation (one-sided operation) such as `-1`
     """
@@ -384,7 +426,7 @@ class UnaryOp(Node):
         self.expr: Node = expr
 
 
-class BinOp(Node):
+class BinOp(InteriorNode):
     """
     BinOp() represents a binary operation (two-sided operation) such as `1+2`
     """
@@ -394,7 +436,7 @@ class BinOp(Node):
         self.right: Node = right
 
 
-class Param(Node):
+class Param(InteriorNode):
     """
     Param() represents a defined argument within a procedure declaration
     """
@@ -403,45 +445,42 @@ class Param(Node):
         self.type_node: TypeNode = type_node
 
 
-"""
-LEAF NODES
-(in order of precedence)
-"""
+class NoOp(InteriorNode):
+    """
+    NoOp() represents an empty statement,
+    for example there would be a NoOp between `;;` because semicolons act as separators
+    """
+    pass
 
 
-class TypeNode(Node):
+class TypeNode(LeafNode):
     """
     TypeNode() represents a data type
     """
     def __init__(self, token):
+        super().__init__(token)
         self.token: Token = token
         self.id = self.token.type.name
 
 
-class Var(Node):
+class Var(LeafNode):
     """
     Var() represents a variable
     """
     def __init__(self, token):
+        super().__init__(token)
         self.token: Token = token
         self.id = self.token.id
 
 
-class Num(Node):
+class Num(LeafNode):
     """
     Num() represents any number-like literal such as `23` or `3.14`
     """
     def __init__(self, token):
+        super().__init__(token)
         self.token: Token = token
         self.id: int | str | None = self.token.id
-
-
-class NoOp(Node):
-    """
-    NoOp() represents an empty statement,
-    for example there would be a NoOp between `;;` because semicolons act as seperators
-    """
-    pass
 
 
 ###########################################
@@ -449,7 +488,6 @@ class NoOp(Node):
 #   Symbols                               #
 #                                         #
 ###########################################
-
 
 class BaseSymbol:
     """
@@ -489,8 +527,10 @@ class ProcedureSymbol(BaseSymbol):
     """
     Symbol which represents procedure declarations
     """
-    def __init__(self, name, params=[]):
+    def __init__(self, name, params=None):
         super().__init__(name)
+        if params is None:
+            params = []
         self.params: list[Param] = params
 
     def __str__(self) -> str:
@@ -506,7 +546,7 @@ class ProcedureSymbol(BaseSymbol):
                     )
                 )
             )
-            return (f"<procedure> (id: {repr(self.name)}, parameters: {parameter_list}")
+            return f"<procedure> (id: {repr(self.name)}, parameters: [{parameter_list}])"
 
 
 ###########################################
@@ -514,7 +554,6 @@ class ProcedureSymbol(BaseSymbol):
 #   Symbol table code                     #
 #                                         #
 ###########################################
-
 
 class SymbolTable:
     """
@@ -532,6 +571,7 @@ class SymbolTable:
         if self.scope_level == 0:
             self.define(BuiltinSymbol("INTEGER"))
             self.define(BuiltinSymbol("FLOAT"))
+            log("SymbolTable: Defined built-in symbols for", repr(self.scope_name), level=LOGGING_VERBOSE)
 
     def __str__(self) -> str:
         # Add header information
@@ -584,6 +624,7 @@ class SymbolTable:
         """
         Adds a symbol to the symbol table
         """
+        log(f"SymbolTable {repr(self.scope_name)}: define {repr(str(symbol))} into scope {repr(self.scope_name)}", level=LOGGING_HIGHLY_VERBOSE)
         self._symbols[symbol.name] = symbol
 
     def lookup(self, symbol_name: str, search_parent_scopes: bool = True) -> BaseSymbol | None:
@@ -595,12 +636,14 @@ class SymbolTable:
         """
         symbol = self._symbols.get(symbol_name)
         if symbol is not None:
+            log(f"SymbolTable {repr(self.scope_name)}: lookup {repr(symbol_name)} returned {repr(str(symbol))} in scope {repr(self.scope_name)}", level=LOGGING_HIGHLY_VERBOSE)
             return symbol
 
         # Recursively search up the scopes to find symbols
         if self.parent_scope is not None and search_parent_scopes:
             return self.parent_scope.lookup(symbol_name)
         else:
+            log(f"SymbolTable {repr(self.scope_name)}: lookup {repr(symbol_name)} returned None in scope {repr(self.scope_name)}", level=LOGGING_HIGHLY_VERBOSE)
             return None
 
 
@@ -609,18 +652,6 @@ class SymbolTable:
 #   Memory system                         #
 #                                         #
 ###########################################
-
-
-class Member:
-    def __init__(self, name: str, value: Any, datatype: str):
-        self.name: str = name
-        self.value: Any = value
-        # May update to Symbol in future
-        self.datatype: str = datatype
-
-    def __str__(self):
-        return f"<{self.datatype}> {self.name} = {repr(self.value)}"
-
 
 class ActivationRecord:
     def __init__(self, name: str, ar_type: ActivationRecordType, scope_level: int):
@@ -697,6 +728,8 @@ class NodeVisitor:
 
     Base class for all classes which visit/walk through a syntax tree
     """
+    def __init__(self):
+        log("NodeVisitor.__init__() complete", stackoffset=1)
 
     def visit(self, node: Node) -> Any:
         """
@@ -713,6 +746,10 @@ class NodeVisitor:
         # If there is no visit_(...) function that
         # matches the name of a given node then
         # visitor_not_found() is called instead.
+        if hasattr(node, 'token'):
+            log(f"{type(self).__name__}: visiting {type(node).__name__} <{node.token.lineno}:{node.token.linecol}>", stackoffset=1, level=LOGGING_ALL)
+        else:
+            log(f"{type(self).__name__}: visiting {type(node).__name__}", stackoffset=1, level=LOGGING_ALL)
         method_name = "visit_" + type(node).__name__
         visitor = getattr(self, method_name, self.visitor_not_found)
         return visitor(node)
@@ -769,7 +806,9 @@ class Lexer:
             'float': TokenType.FLOAT,
             'def': TokenType.DEFINITION
         }
-
+        log("Lexer: created `RESERVED_KEYWORDS` table")
+        log("Lexer.__init__() complete", stackoffset=1)
+        
     # Utility functions
 
     def error(self, message=None, char_pos=None):
@@ -788,6 +827,7 @@ class Lexer:
             position=char_pos,
             surrounding_lines=self.text_lines
         )
+        log(f"Lexer: displaying SyntaxError: {repr(message)} at <{self.lineno}:{self.linecol}>", stackoffset=1)
         error.trigger()
 
     def advance(self):
@@ -805,9 +845,11 @@ class Lexer:
             # After the lexer has tried multiple times to get
             # the next token while being at the end of the code.
             # This behaviour occurs when there is an error with
-            # the lexeical analysis stage.
+            # the lexical analysis stage.
             if self.reached_end_counter > 3:
                 print("(Lexer) [CRITICAL] Lexer has reached end of code but is still trying to advance")
+                log("Lexer: Lexer has reached end of code but is still trying to advance", level=logging.CRITICAL)
+                log("Lexer: Program terminating with an errored state", level=logging.CRITICAL)
                 exit()
             self.reached_end_counter += 1
             self.current_char = None
@@ -857,7 +899,7 @@ class Lexer:
         """Creates and returns an identifier token"""
         result = ""
         start_pos = self.linecol
-        # While the current char is alpha numeric or '_'
+        # While the current char is alphanumeric or '_'
         while self.current_char is not None and (self.current_char.isalnum() or self.current_char == "_"):
             result += self.current_char
             self.advance()
@@ -878,6 +920,13 @@ class Lexer:
             number += self.current_char
             self.advance()
 
+        # If number is longer than one character and startswith a 0
+        if len(number) > 1 and number[0] == "0":
+            self.error(
+                message=f"Number cannot have leading zeros",
+                char_pos=[self.lineno, start_pos]
+            )
+
         # If there is a decimal that would indicate a float.
         if self.current_char == ".":
             number += self.current_char
@@ -893,7 +942,7 @@ class Lexer:
                 has_decimals = True
                 self.advance()
 
-            if has_decimals == False:
+            if not has_decimals:
                 self.error(
                     message="Incomplete float",
                     char_pos=[self.lineno, self.linecol-1]
@@ -1066,16 +1115,20 @@ class Parser:
     def __init__(self, text):
         self.text: str = text
         self.lexer: Lexer = Lexer(self.text)
+        log("Parser: pre-loading first token")
         self.current_token: Token = self.lexer.get_next_token()
         # Previous token refers to the token before the current token
         # It is initially set to an empty token
         # Exclusively used by the error reporter
+        log("Parser: setting `self.previous_token` to empty token")
         self.previous_token: Token = Token(None,None,0,0)
+        log("Parser.__init__() complete", stackoffset=1)
 
     def error(self, error_code: ErrorCode, token: Token, message):
         """
         Create and raise a ParserError object
         """
+        log(f"Parser: displaying {error_code.value}: {repr(message)} at <{token.lineno}:{token.linecol}>", stackoffset=1)
         error = ParserError(error_code, message, token=token, surrounding_lines=self.lexer.text_lines)
         error.trigger()
 
@@ -1085,8 +1138,7 @@ class Parser:
         type and, if equal, 'eat' the current
         token and move onto the next token.
         """
-        if PRINT_TOKENS:
-            print(self.current_token, expected_type)
+        log(f"Parser.eat(): (current type: {self.current_token.type}, expected type: {expected_type})", level=LOGGING_EAT_STACK, stackoffset=1)
         if self.current_token.type == expected_type:
             self.previous_token = self.current_token
             self.current_token = self.lexer.get_next_token()
@@ -1133,31 +1185,25 @@ class Parser:
         - Missing semicolons after procedure declarations
         - Missing semicolons after any other statement
 
-        Note: compounds and procedures are handled seprately for more accurate error reporting
+        Note: compounds and procedures are handled separately for more accurate error reporting
         """
         if isinstance(statement, NoOp) and self.current_token.type == TokenType.SEMI:
             self.error(
                 error_code=ErrorCode.SYNTAX_ERROR,
                 token=self.current_token,
-                message="Too many semicolons!"
-            )
-        elif isinstance(statement, Compound) and self.current_token.type != TokenType.SEMI:
-            self.error(
-                error_code=ErrorCode.SYNTAX_ERROR,
-                token=self.previous_token,
-                message="Missing semicolon after compound"
+                message="Semicolon separates an empty statement"
             )
         elif isinstance(statement, ProcedureDecl) and self.current_token.type != TokenType.SEMI:
             self.error(
                 error_code=ErrorCode.SYNTAX_ERROR,
                 token=self.previous_token,
-                message="Missing semicolon after procedure"
+                message="Expected semicolon after procedure"
             )
         elif (not isinstance(statement, NoOp)) and self.current_token.type != TokenType.SEMI:
             self.error(
                 error_code=ErrorCode.SYNTAX_ERROR,
                 token=self.previous_token,
-                message=f"Missing semicolon" 
+                message=f"Invalid syntax, perhaps you forgot a semicolon?" 
             )
 
     # Grammar definitions
@@ -1169,11 +1215,10 @@ class Parser:
         node = Program()
 
         node.statements = self.statement_list()
-
-        if PRINT_EAT_STACK:
-            print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+        
         self.eat(TokenType.EOF)
-
+        
+        log(f"Parser: created {node.__class__.__name__}() <{self.current_token.lineno}:{self.current_token.linecol}> in {getframeinfo(currentframe()).function}()", level=LOGGING_ALL)
         return node
 
     def statement_list(self) -> list[Node]:
@@ -1187,15 +1232,14 @@ class Parser:
 
         results = [node]
 
-        while self.current_token.type == TokenType.SEMI:
-            if PRINT_EAT_STACK:
-                print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+        while self.current_token.type == TokenType.SEMI:            
             self.eat(TokenType.SEMI)
             statement = self.statement()
             if _DEV_STRICT_SEMICOLONS:
                 self.semicolon_check(statement)
             results.append(statement)
 
+        log(f"Parser: created list[Node]({len(results)}) <{self.current_token.lineno}:{self.current_token.linecol}> in {getframeinfo(currentframe()).function}()", level=LOGGING_ALL)
         return results
 
     def statement(self) -> Node:
@@ -1221,45 +1265,37 @@ class Parser:
                 node = self.variable_assignment()
         else:
             node = self.empty()
+        log(f"Parser: created {node.__class__.__name__}() <{self.current_token.lineno}:{self.current_token.linecol}> in {getframeinfo(currentframe()).function}()", level=LOGGING_ALL)
         return node
 
     def compound_statement(self) -> Compound:
         """
         compound_statement -> `BEGIN` statement_list `END`
-        """
-        if PRINT_EAT_STACK:
-            print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+        """        
         self.eat(TokenType.BEGIN)
-        nodes = self.statement_list()
-        if PRINT_EAT_STACK:
-            print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+        nodes = self.statement_list()        
         self.eat(TokenType.END)
 
         root = Compound()
         for node in nodes:
             root.children.append(node)
 
+        log(f"Parser: created {root.__class__.__name__}()({len(root.children)}) <{self.current_token.lineno}:{self.current_token.linecol}> in {getframeinfo(currentframe()).function}()", level=LOGGING_ALL)
         return root
 
     def procedure_declaration(self) -> ProcedureDecl:
         """
         procedure_declaration -> `DEFINITION` variable `LPAREN` formal_parameter_list `RPAREN` compound_statement
                                | `DEFINITION` variable `LPAREN` formal_parameter_list `RPAREN` `RETURNS_OP` type_spec compound_statement
-        """
-        if PRINT_EAT_STACK:
-            print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+        """        
         self.eat(TokenType.DEFINITION)
 
         procedure_var = self.variable()
-
-        if PRINT_EAT_STACK:
-            print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+        
         self.eat(TokenType.LPAREN)
 
         params = self.formal_parameter_list()
-
-        if PRINT_EAT_STACK:
-            print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+        
         self.eat(TokenType.RPAREN)
 
         if self.current_token.type == TokenType.BEGIN:
@@ -1269,9 +1305,7 @@ class Parser:
             proc_decl = ProcedureDecl(procedure_var, params, body)
 
         elif self.current_token.type == TokenType.RETURNS_OP:
-
-            if PRINT_EAT_STACK:
-                print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+            
             self.eat(TokenType.RETURNS_OP)
 
             return_type = self.type_spec()
@@ -1287,6 +1321,7 @@ class Parser:
                 message=f"Invalid procedure declaration form"
             )
 
+        log(f"Parser: created {proc_decl.__class__.__name__}() <{self.current_token.lineno}:{self.current_token.linecol}>  in {getframeinfo(currentframe()).function}()", level=LOGGING_ALL)
         return proc_decl
 
     def procedure_call(self) -> ProcedureCall:
@@ -1294,13 +1329,9 @@ class Parser:
         procedure_call -> variable `LPAREN` (empty | expr (`COMMA` expr)*) `RPAREN`
         """
         procedure_var = self.current_token
-
-        if PRINT_EAT_STACK:
-            print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+        
         self.eat(TokenType.IDENTIFIER)
-
-        if PRINT_EAT_STACK:
-            print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+        
         self.eat(TokenType.LPAREN)
 
         literal_params = []
@@ -1311,18 +1342,15 @@ class Parser:
 
             # If there is a comma after the first param,
             # that means there should be more parameters after it
-            while self.current_token.type == TokenType.COMMA:
-                if PRINT_EAT_STACK:
-                    print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+            while self.current_token.type == TokenType.COMMA:                
                 self.eat(TokenType.COMMA)
                 literal_params.append(self.expr())
-
-        if PRINT_EAT_STACK:
-            print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+        
         self.eat(TokenType.RPAREN)
 
         node = ProcedureCall(procedure_var, literal_params)
 
+        log(f"Parser: created {node.__class__.__name__}() <{self.current_token.lineno}:{self.current_token.linecol}> in {getframeinfo(currentframe()).function}()", level=LOGGING_ALL)
         return node
 
     def variable_declaration(self) -> VarDecl | Compound:
@@ -1337,9 +1365,7 @@ class Parser:
 
         # type_spec variable `ASSIGN` expr
         if self.current_token.type == TokenType.ASSIGN:
-            assign_op = self.current_token
-            if PRINT_EAT_STACK:
-                print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+            assign_op = self.current_token            
             self.eat(TokenType.ASSIGN)
             expr_node = self.expr()
 
@@ -1350,35 +1376,49 @@ class Parser:
             node = VarDecl(type_node, var_node)
 
         # type_spec variable (`COMMA` variable)*
-        else:
+        elif self.current_token.type == TokenType.COMMA:
             node = Compound()
             node.children.append(VarDecl(type_node, var_node))
-            while self.current_token.type == TokenType.COMMA:
-                if PRINT_EAT_STACK:
-                    print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+            while self.current_token.type == TokenType.COMMA:                
                 self.eat(TokenType.COMMA)
                 var_node = self.variable()
                 node.children.append(VarDecl(type_node, var_node))
-
+            
+        else:
+            # If the token that resulted in this error is on the same line,
+            # it is likely an issue inside the declaration statement
+            if self.current_token.lineno == self.previous_token.lineno:
+                self.error(
+                    error_code=ErrorCode.SYNTAX_ERROR,
+                    token=self.current_token,
+                    message=f"Declaration statement has an invalid form"
+                )
+            # If it is on a different line, it is likely that the user has
+            # just forgotten a semicolon
+            else:
+                self.error(
+                    error_code=ErrorCode.SYNTAX_ERROR,
+                    token=self.previous_token,
+                    message=f"Declaration statement has an invalid form, perhaps you forgot a semicolon?"
+                )
+            
+        log(f"Parser: created {node.__class__.__name__}() <{self.current_token.lineno}:{self.current_token.linecol}> in {getframeinfo(currentframe()).function}()", level=LOGGING_ALL)
         return node
 
     def variable_assignment(self) -> AssignOp:
         """
         variable_assignment -> variable `ASSIGN` expr
         """
-        var_node = self.current_token
-        if PRINT_EAT_STACK:
-            print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+        var_node = self.current_token        
         self.eat(TokenType.IDENTIFIER)
 
-        assign_op = self.current_token
-        if PRINT_EAT_STACK:
-            print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+        assign_op = self.current_token        
         self.eat(TokenType.ASSIGN)
 
         right = self.expr()
         node = AssignOp(var_node, assign_op, right)
 
+        log(f"Parser: created {node.__class__.__name__}() <{self.current_token.lineno}:{self.current_token.linecol}> in {getframeinfo(currentframe()).function}()", level=LOGGING_ALL)
         return node
 
     def formal_parameter_list(self) -> list[Param]:
@@ -1395,9 +1435,7 @@ class Parser:
 
             results = [node]
 
-            while self.current_token.type == TokenType.COMMA:
-                if PRINT_EAT_STACK:
-                    print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+            while self.current_token.type == TokenType.COMMA:                
                 self.eat(TokenType.COMMA)
                 results.append(self.formal_parameter())
 
@@ -1405,6 +1443,7 @@ class Parser:
             #if self.current_token.type == TokenType.IDENTIFIER:
             #    self.error()
 
+        log(f"Parser: created list[Param]({len(results)}) <{self.current_token.lineno}:{self.current_token.linecol}> in {getframeinfo(currentframe()).function}()", level=LOGGING_ALL)
         return results
 
     def formal_parameter(self) -> Param:
@@ -1416,6 +1455,7 @@ class Parser:
 
         param_node = Param(var_node, type_node)
 
+        log(f"Parser: created {param_node.__class__.__name__}() <{self.current_token.lineno}:{self.current_token.linecol}> in {getframeinfo(currentframe()).function}()", level=LOGGING_ALL)
         return param_node
 
     def type_spec(self) -> TypeNode:
@@ -1423,9 +1463,7 @@ class Parser:
         type_spec -> `INTEGER` | `FLOAT`
         """
         token = self.current_token
-        if self.is_type():
-            if PRINT_EAT_STACK:
-                print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+        if self.is_type():            
             self.eat(token.type)
         else:
             self.error(
@@ -1435,12 +1473,14 @@ class Parser:
             )
 
         node = TypeNode(token)
+        log(f"Parser: created {node.__class__.__name__}() <{self.current_token.lineno}:{self.current_token.linecol}> in {getframeinfo(currentframe()).function}()", level=LOGGING_ALL)
         return node
 
     def empty(self) -> NoOp:
         """
         empty ->
         """
+        log(f"Parser: created NoOp() <{self.current_token.lineno}:{self.current_token.linecol}> in {getframeinfo(currentframe()).function}()", level=LOGGING_ALL)
         return NoOp()
 
     def expr(self) -> Node:
@@ -1453,18 +1493,15 @@ class Parser:
         while self.current_token.type in (TokenType.PLUS, TokenType.MINUS):
             token = self.current_token
 
-            if token.type == TokenType.PLUS:
-                if PRINT_EAT_STACK:
-                    print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+            if token.type == TokenType.PLUS:                
                 self.eat(TokenType.PLUS)
 
-            elif token.type == TokenType.MINUS:
-                if PRINT_EAT_STACK:
-                    print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+            elif token.type == TokenType.MINUS:                
                 self.eat(TokenType.MINUS)
 
             node = BinOp(left=node, op=token, right=self.term())
 
+        log(f"Parser: created {node.__class__.__name__}() <{self.current_token.lineno}:{self.current_token.linecol}> in {getframeinfo(currentframe()).function}()", level=LOGGING_ALL)
         return node
 
     def term(self) -> Node:
@@ -1477,23 +1514,18 @@ class Parser:
         while self.current_token.type in (TokenType.MULT, TokenType.INTEGER_DIV, TokenType.FLOAT_DIV):
             token = self.current_token
 
-            if token.type == TokenType.MULT:
-                if PRINT_EAT_STACK:
-                    print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+            if token.type == TokenType.MULT:                
                 self.eat(TokenType.MULT)
 
-            elif token.type == TokenType.INTEGER_DIV:
-                if PRINT_EAT_STACK:
-                    print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+            elif token.type == TokenType.INTEGER_DIV:                
                 self.eat(TokenType.INTEGER_DIV)
 
-            elif token.type == TokenType.FLOAT_DIV:
-                if PRINT_EAT_STACK:
-                    print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+            elif token.type == TokenType.FLOAT_DIV:                
                 self.eat(TokenType.FLOAT_DIV)
 
             node = BinOp(left=node, op=token, right=self.factor())
 
+        log(f"Parser: created {node.__class__.__name__}() <{self.current_token.lineno}:{self.current_token.linecol}> in {getframeinfo(currentframe()).function}()", level=LOGGING_ALL)
         return node
 
     def factor(self) -> Node:
@@ -1507,51 +1539,40 @@ class Parser:
         token = self.current_token
 
         # `MINUS` factor
-        if token.type == TokenType.MINUS:
-            if PRINT_EAT_STACK:
-                print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+        if token.type == TokenType.MINUS:            
             self.eat(TokenType.MINUS)
             node = UnaryOp(token, self.factor())
-            return node
 
         # `INTEGER_LITERAL`
-        elif token.type == TokenType.INTEGER_LITERAL:
-            if PRINT_EAT_STACK:
-                print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+        elif token.type == TokenType.INTEGER_LITERAL:            
             self.eat(TokenType.INTEGER_LITERAL)
-            return Num(token)
+            node = Num(token)
 
         # `FLOAT_CONST`
-        elif token.type == TokenType.FLOAT_LITERAL:
-            if PRINT_EAT_STACK:
-                print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+        elif token.type == TokenType.FLOAT_LITERAL:            
             self.eat(TokenType.FLOAT_LITERAL)
-            return Num(token)
+            node = Num(token)
 
         # `LPAREN` expr `RPAREN`
-        elif token.type == TokenType.LPAREN:
-            if PRINT_EAT_STACK:
-                print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+        elif token.type == TokenType.LPAREN:            
             self.eat(TokenType.LPAREN)
-            node = self.expr()
-            if PRINT_EAT_STACK:
-                print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+            node = self.expr()            
             self.eat(TokenType.RPAREN)
-            return node
 
         # variable
         else:
             node = self.variable()
-            return node
+
+        log(f"Parser: created {node.__class__.__name__}() <{self.current_token.lineno}:{self.current_token.linecol}> in {getframeinfo(currentframe()).function}()", level=LOGGING_ALL)
+        return node
 
     def variable(self) -> Var:
         """
         variable -> `IDENTIFIER`
         """
-        node = Var(self.current_token)
-        if PRINT_EAT_STACK:
-            print("(Parser) Calling eat() from line", getframeinfo(currentframe()).lineno)
+        node = Var(self.current_token)        
         self.eat(TokenType.IDENTIFIER)
+        log(f"Parser: created {node.__class__.__name__}() <{self.current_token.lineno}:{self.current_token.linecol}> in {getframeinfo(currentframe()).function}()", level=LOGGING_ALL)
         return node
 
     def parse(self) -> Node:
@@ -1608,8 +1629,9 @@ class Parser:
         variable -> `IDENTIFIER`
         ```
         """
+        log(f"Parser: parsing file {repr(current_filename)}")
         node = self.program()
-
+        log(f"Parser: finished parsing file {repr(current_filename)}")
         return node
 
 
@@ -1624,31 +1646,46 @@ class SemanticAnalyser(NodeVisitor):
     Constructs the symbol table and performs type-checks before runtime
     """
     def __init__(self, text: str):
+        super().__init__()
         self.text_lines: list[str] = text.split('\n')
         self.current_scope: SymbolTable | None = None
+        log("SemanticAnalyser.__init__() complete", stackoffset=1)
 
     def error(self, error_code: ErrorCode, token: Token, message):
         """
         Create and raise a SemanticAnalyserError object
         """
+        log(f"SemanticAnalyser: displaying {error_code.value}: {repr(message)} at <{token.lineno}:{token.linecol}>")
         error = SemanticAnalyserError(error_code, message, token, surrounding_lines=self.text_lines)
         error.trigger()
+
+    def analyse(self, tree: Node):
+        """
+        Performs semantic analysis before executing the code
+        """
+        log("SemanticAnalyser: Performing analysis and creating symbol tables")
+        self.visit(tree)
+        log("SemanticAnalyser: Analysis complete!")
 
     def visit_Program(self, node: Program):
         # Create new symbol tables for the program
         # Might move <builtins> declaration to a seperate place when modules are added
+        log("SemanticAnalyser: creating '<builtins>' symbol table", level=LOGGING_VERBOSE)
         builtin_scope = SymbolTable(scope_name="<builtins>", scope_level=0)
+        log("SemanticAnalyser: creating '<global>' symbol table", level=LOGGING_VERBOSE)
         global_scope = SymbolTable(scope_name="<global>", scope_level=1, parent_scope=builtin_scope)
         self.current_scope = global_scope
-
-        if PRINT_SCOPE:
-            print(builtin_scope)
+        
+        log("SemanticAnalyser: SCOPE", repr(builtin_scope.scope_name), level=LOGGING_HIGHLY_VERBOSE)
+        log(str(builtin_scope), level=LOGGING_HIGHLY_VERBOSE, prefix_per_line=" |   ")
+        log("SemanticAnalyser: SCOPE", repr(builtin_scope.scope_name), "END", level=LOGGING_HIGHLY_VERBOSE)
 
         for child in node.statements:
             self.visit(child)
 
-        if PRINT_SCOPE:
-            print(global_scope)
+        log("SemanticAnalyser: SCOPE", repr(global_scope.scope_name), level=LOGGING_HIGHLY_VERBOSE)
+        log(str(global_scope), level=LOGGING_HIGHLY_VERBOSE, prefix_per_line=" |   ")
+        log("SemanticAnalyser: SCOPE", repr(global_scope.scope_name), "END", level=LOGGING_HIGHLY_VERBOSE)
 
         # Return to global scope
         self.current_scope = global_scope
@@ -1662,6 +1699,8 @@ class SemanticAnalyser(NodeVisitor):
         type_symbol = self.visit(node.type_node)
 
         var_id = node.var_node.id
+        if var_id == "_":
+            return
 
         if self.current_scope.lookup(var_id, search_parent_scopes=False) is not None:
             self.error(
@@ -1690,6 +1729,7 @@ class SemanticAnalyser(NodeVisitor):
         proc_symbol = ProcedureSymbol(proc_name, proc_params)
         self.current_scope.define(proc_symbol)
 
+        log(f"SemanticAnalyser: creating {repr(proc_name)} symbol table", level=LOGGING_VERBOSE)
         proc_scope = SymbolTable(scope_name=proc_name, scope_level=self.current_scope.scope_level + 1,
                                  parent_scope=self.current_scope)
         self.current_scope = proc_scope
@@ -1702,8 +1742,9 @@ class SemanticAnalyser(NodeVisitor):
 
         self.visit(node.compound_node)
 
-        if PRINT_SCOPE:
-            print(self.current_scope)
+        log("SemanticAnalyser: SCOPE", repr(self.current_scope.scope_name), level=LOGGING_HIGHLY_VERBOSE)
+        log(str(self.current_scope), level=LOGGING_HIGHLY_VERBOSE, prefix_per_line=" |   ")
+        log("SemanticAnalyser: SCOPE", repr(self.current_scope.scope_name), "END", level=LOGGING_HIGHLY_VERBOSE)
 
         # Return to parent scope
         self.current_scope = self.current_scope.parent_scope
@@ -1715,7 +1756,6 @@ class SemanticAnalyser(NodeVisitor):
     def visit_AssignOp(self, node: AssignOp):
         var_id = node.left.id
         var_symbol = self.current_scope.lookup(var_id)
-
         if var_symbol is None:
             self.error(
                 error_code=ErrorCode.NAME_ERROR,
@@ -1771,7 +1811,7 @@ class SemanticAnalyser(NodeVisitor):
 #                                         #
 ###########################################
 
-# Currently some unloved garbárge
+# Currently some (slightly less) unloved garbárge
 class Interpreter(NodeVisitor):
     """
     Main interpreter class
@@ -1782,9 +1822,10 @@ class Interpreter(NodeVisitor):
 
     It also handles type-checking at runtime
     """
-
     def __init__(self):
+        super().__init__()
         self.call_stack = CallStack()
+        log("Interpreter.__init__() complete", stackoffset=1)
 
     def interpret(self, tree: Node):
         """
@@ -1795,23 +1836,28 @@ class Interpreter(NodeVisitor):
         return self.visit(tree)
 
     def visit_Program(self, node: Program):
-        program_name = current_filename
-        if program_name.endswith(".sap"):
-            program_name = program_name[:-4]
+        log(f"Interpreter: Interpreting tree", repr(node))
         ar = ActivationRecord(
-            name=program_name,
+            name="<program>",
             ar_type=ActivationRecordType.PROGRAM,
             scope_level=1
         )
+        log(f"Interpreter: created AR", repr(ar.name), repr(ar), level=LOGGING_VERBOSE)
 
         self.call_stack.push(ar)
+
+        log(f"Interpreter: pushed AR {repr(ar.name)} onto call stack", level=LOGGING_VERBOSE)
 
         for child in node.statements:
             self.visit(child)
 
-        print(ar)
+        log("Interpreter: ACTIVATION RECORD", repr(ar.name), level=LOGGING_HIGHLY_VERBOSE)
+        log(str(ar), level=LOGGING_HIGHLY_VERBOSE, prefix_per_line=" |   ")
+        log("Interpreter: ACTIVATION RECORD", repr(ar.name), "END", level=LOGGING_HIGHLY_VERBOSE)
 
         self.call_stack.pop()
+        log(f"Interpreter: lifted AR {repr(ar.name)} from call stack", level=LOGGING_VERBOSE)
+        log(f"Interpreter: Finished interpreting tree")
 
     def visit_Compound(self, node: Compound):
         for child in node.children:
@@ -1821,18 +1867,23 @@ class Interpreter(NodeVisitor):
         variable_id = node.var_node.id
         variable_type_name = node.type_node.id
 
+        if variable_id == "_":
+            return
+
         current_ar = self.call_stack.peek()
 
         if node.expr_node is not None:
-            var_value = self.visit(node.expr_node)
+            variable_value = self.visit(node.expr_node)
 
             current_ar.set(
                 Member(
                     name=variable_id,
-                    value=var_value,
+                    value=variable_value,
                     datatype=variable_type_name
                 )
             )
+            log(f"Interpreter: VarDecl <{variable_type_name}> {repr(variable_id)} = {repr(variable_value)}", level=LOGGING_HIGHLY_VERBOSE)
+
         else:
             current_ar.set(
                 Member(
@@ -1841,6 +1892,7 @@ class Interpreter(NodeVisitor):
                     datatype=variable_type_name
                 )
             )
+            log(f"Interpreter: VarDecl <{variable_type_name}> {repr(variable_id)} = None", level=LOGGING_HIGHLY_VERBOSE)
 
     def visit_ProcedureDecl(self, node):
         pass
@@ -1849,21 +1901,26 @@ class Interpreter(NodeVisitor):
         pass
 
     def visit_AssignOp(self, node: AssignOp):
+        current_ar = self.call_stack.peek()
         variable_id = node.left.id
+        variable_type_name = current_ar.get(variable_id).datatype
         variable_value = self.visit(node.right)
 
-        current_ar = self.call_stack.peek()
+        if "?" not in variable_type_name:
+            variable_type_name = "?" + variable_type_name
+
         current_ar.set(
             Member(
                 variable_id,
                 variable_value,
-                "[DEV] Add typing already!"
+                variable_type_name
             )
         )
         #if variable_id in self.global_scope:
         #    self.global_scope[variable_id][1] = self.visit(node.right)
         #else:
         #    raise ValueError("Interpreter :: Attempted to assign value to uninitialised variable!")
+        log(f"Interpreter: AssignOp <{variable_type_name}> {repr(variable_id)} = {repr(variable_value)}", level=LOGGING_HIGHLY_VERBOSE)
 
     def visit_UnaryOp(self, node: UnaryOp):
         if node.op.type == TokenType.PLUS:
@@ -1872,16 +1929,18 @@ class Interpreter(NodeVisitor):
             return -self.visit(node.expr)
 
     def visit_BinOp(self, node: BinOp):
+        left = self.visit(node.left)
+        right = self.visit(node.right)
         if node.op.type == TokenType.PLUS:
-            return self.visit(node.left) + self.visit(node.right)
+            return left + right
         elif node.op.type == TokenType.MINUS:
-            return self.visit(node.left) - self.visit(node.right)
+            return left - right
         elif node.op.type == TokenType.MULT:
-            return self.visit(node.left) * self.visit(node.right)
+            return left * right
         elif node.op.type == TokenType.INTEGER_DIV:
-            return int(self.visit(node.left) // self.visit(node.right))
+            return int(left // right)
         elif node.op.type == TokenType.FLOAT_DIV:
-            return self.visit(node.left) / self.visit(node.right)
+            return left / right
 
     def visit_TypeNode(self, node: TypeNode):
         # Not utilised yet
@@ -1916,23 +1975,33 @@ class Driver:
     Driver code to execute the program
     """
     def __init__(self):
-        self.filename: str = DEFAULT_FILENAME
-        self.mode: str = "cmdline"
+        self.filename: str = _DEV_DEFAULT_FILENAME
+        self.mode: str = MODE
+        log("Driver.__init__() complete")
 
     def run_program(self):
         """
         Calls the relevant function for the given mode
         """
-        self._process_arguments()
+        log("Driver.run_program(): executing")
+        if self.mode == "file":
+            self._process_arguments()
+
+        # self._process_arguments() modifies self.mode and self.filename,
+        # so we need to check self.mode again
         if self.mode == "cmdline":
             self.cmdline_input()
         elif self.mode == "file":
             # Set the global filename, used by error handler
             global current_filename
             current_filename = self.filename
+            log(f"Driver.run_program(): Set global `current_filename` to {repr(self.filename)}")
             self.file_input(self.filename)
         else:
+            log(f"ValueError: mode {repr(self.mode)} is not a valid mode.", level=logging.CRITICAL)
             raise ValueError(f"mode {repr(self.mode)} is not a valid mode.")
+
+        log("Driver.run_program(): Program terminating with a success state", level=logging.INFO)
 
     def _process_arguments(self):
         """
@@ -1940,56 +2009,75 @@ class Driver:
 
         Very basic implementation right now, will improve later
         """
-        if len(sys.argv) == 1:
+        log("Driver._process_arguments(): Processing command line arguments")
+        if len(argv) == 1:
             # self.mode = "cmdline"
             # NOTE: cmdline disabled while testing to make execution quicker (Since I click run about 100 times/day (JOKE (satire)))
             # All of the following code should be removed in prod (not that I will ever reach that stage)
-            if os.path.isfile(DEFAULT_FILENAME):
-                self.filename = DEFAULT_FILENAME
+            if isfile(_DEV_DEFAULT_FILENAME):
+                self.filename = _DEV_DEFAULT_FILENAME
                 self.mode = "file"
             else:
-                raise Exception(f"file {repr(DEFAULT_FILENAME)} does not exist!")
+                log(f"Driver._process_arguments(): Exception: file {repr(_DEV_DEFAULT_FILENAME)} does not exist!", level=logging.CRITICAL)
+                raise Exception(f"file {repr(_DEV_DEFAULT_FILENAME)} does not exist!")
 
-        elif len(sys.argv) == 2:
-            path = sys.argv[1]
-            if os.path.isfile(path):
+        elif len(argv) == 2:
+            path = argv[1]
+            if isfile(path):
                 self.filename = path
                 self.mode = "file"
         else:
+            log("Driver._process_arguments(): Exception: Unrecognised arguments:", *argv, level=logging.CRITICAL)
             raise Exception("Unrecognised arguments!")
 
+        log("Driver._process_arguments(): Driver.mode is now", repr(self.mode))
+
     def _process(self, code: str):
+        log("Driver._process(): Initialising modules")
         parser = Parser(code)
         symbol_table = SemanticAnalyser(code)
         interpreter = Interpreter()
 
+        log("Driver._process(): All modules initialised")
+        log("Driver._process(): Evoking parser")
         tree = parser.parse()
 
-        if PRINT_TREE:
-            print(tree)
-
-        symbol_table.visit(tree)
+        log(f"SYNTAX TREE ({repr(current_filename)})", level=LOGGING_HIGHLY_VERBOSE)
+        log(str(tree), level=LOGGING_HIGHLY_VERBOSE, prefix_per_line=" |   ")
+        log("SYNTAX TREE END", level=LOGGING_HIGHLY_VERBOSE)
+        
+        log("Driver._process(): Evoking semantic analyser")
+        symbol_table.analyse(tree)
+        log("Driver._process(): Evoking interpreter")
         interpreter.interpret(tree)
 
-        #print()
-        #print("Global vars (doesn't account for functions):")
-        #print(interpreter.global_scope)
-        #print()
+        log("Driver._process(): Processing complete!")
 
     def cmdline_input(self):
         """
         Run interpreter in command line interface mode
         """
+        log("Driver: Attempted to execute program in command-line mode, which is not implemented")
+        log("Driver: Terminating program")
+        print("Command-line interface not implemented")
+        exit()
+        log("Driver.cmdline_input(): Executing program in command line mode")
         while 1:
+            
+            log("Driver.cmdline_input(): Set state to waiting for input")
 
             try:
                 text = input(">>> ")
             except KeyboardInterrupt:
                 # Silently exit
+                log("Driver.cmdline_input(): Keyboard exit code (ctrl-c) fired, program terminating silently", level=logging.INFO)
                 return
 
             if not text:
+                log("Driver.cmdline_input(): Line is empty, not processing")
                 continue
+            
+            log("Driver.cmdline_input(): Processing line", repr(text))
 
             self._process(text)
 
@@ -1997,15 +2085,63 @@ class Driver:
         """
         Run interpreter in file mode
         """
+        log("Driver.file_input(): Executing program in file input mode")
         file = open(filename, "r")
         text = file.read()
+        log("Driver.file_input(): Successfully read file", repr(filename))
 
         if not text:
+            log("Driver.file_input(): File is empty, not processing")
             return
-
+        
+        log("Driver.file_input(): Processing file")
         self._process(text)
 
 
+###########################################
+#                                         #
+#   Main body                             #
+#                                         #
+###########################################
+
+def log(*message, level:int=logging.DEBUG, stackoffset:int=0, prefix_per_line:str=""):
+    """
+    `log("Hello\\nworld", level=10, stackoffset=0, prefix_per_line="LOGGER: ")`
+
+    Logs a given message (or list of messages) to the default logger.
+    `level`: The logging level at which to write to the log
+    `stackoffset`: The number at which to offset the stack used by the logger
+    to obtain information like line number or current function
+    `prefix_per_line`: What to prefix each line with, particularly useful
+    for multi-line messages
+    """
+    if LOGGING_ENABLED:
+        message = " ".join(map(str, message))
+        message = message.split("\n")
+        for line in message:
+            logging.log(msg=prefix_per_line+line, level=level, stacklevel=3+stackoffset)
+
+if LOGGING_ENABLED:
+    logging.addLevelName(LOGGING_VERBOSE, "VERBOSE")
+    logging.addLevelName(LOGGING_HIGHLY_VERBOSE, "HVERBOSE")
+    logging.addLevelName(LOGGING_EAT_STACK, "EATSTACK")
+    logging.addLevelName(LOGGING_ALL, "ALL")
+    logging.basicConfig(
+        filename='logs/runtime.log',
+        filemode='w',
+        format='%(asctime)s [%(filename)s:%(lineno)04d] %(levelname)-8s - %(message)s',
+        datefmt='%H:%M:%S',
+        level=LOGGING_CURRENT_LEVEL
+    )
+
 if __name__ == '__main__':
+    execution_start_time = current_time()
+
+    log("Initialising", level=logging.INFO)
+
     driver = Driver()
     driver.run_program()
+
+    execution_finish_time = round(current_time()-execution_start_time, 5)
+    log(f"Execution finished in {execution_finish_time}s", level=logging.INFO)
+    print(f"Execution finished in {execution_finish_time}s")
