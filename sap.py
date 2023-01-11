@@ -11,6 +11,9 @@ from sys            import argv
 from typing         import Any
 from time           import time as current_time
 
+from builtin_types  import *
+from arithmetic     import *
+
 ### Constants
 
 # The valid modes are: "file" or "cmdline"
@@ -27,11 +30,11 @@ LOGGING_ALL = 5
 
 # Anything at this level or above it will be
 # outputted to the 'runtime.log' file
-LOGGING_CURRENT_LEVEL = LOGGING_VERBOSE
+LOGGING_CURRENT_LEVEL = LOGGING_ALL
 
 # If no file was specified in the arguments, use this instead
 # Overrides default cmdline behaviour
-_DEV_DEFAULT_FILENAME = "procedure_calls.sap"
+_DEV_DEFAULT_FILENAME = "proc1.sap"
 # This defines how errors are treated
 # If true, it will raise an error with the full stack trace,
 # useful for debugging purposes
@@ -104,7 +107,8 @@ class DataType(Enum):
 
 
 class ActivationRecordType(Enum):
-    PROGRAM = "PROGRAM"
+    PROGRAM     = "PROGRAM"
+    PROCEDURE   = "PROCEDURE"
 
 
 class ErrorCode(Enum):
@@ -405,6 +409,7 @@ class ProcedureCall(InteriorNode):
     def __init__(self, procedure_var, literal_params):
         self.procedure_var: Var = procedure_var
         self.literal_params: list[Param] = literal_params
+        self.procedure_symbol: ProcedureSymbol | None = None
 
 
 class AssignOp(InteriorNode):
@@ -496,6 +501,7 @@ class BaseSymbol:
     def __init__(self, name, datatype=None):
         self.name: str = name
         self.type: BuiltinSymbol | None = datatype
+        self.scope_level = 0
 
     def __str__(self) -> str:
         return self.name
@@ -527,14 +533,12 @@ class ProcedureSymbol(BaseSymbol):
     """
     Symbol which represents procedure declarations
     """
-    def __init__(self, name, params=None):
+    def __init__(self, name: str, procedure_node: ProcedureDecl):
         super().__init__(name)
-        if params is None:
-            params = []
-        self.params: list[Param] = params
+        self.procedure_node = procedure_node
 
     def __str__(self) -> str:
-        if len(self.params) == 0:
+        if len(self.procedure_node.params) == 0:
             return f"<procedure> (id: {repr(self.name)}, parameters: <no params>)"
         else:
             # Okay, yes this is (slightly less) horrendous don't @me
@@ -542,7 +546,7 @@ class ProcedureSymbol(BaseSymbol):
                 list(
                     map(
                         lambda param: f"({repr(param.var_node.id)}, <{param.type_node.id}>)",
-                        self.params
+                        self.procedure_node.params
                     )
                 )
             )
@@ -576,9 +580,9 @@ class SymbolTable:
     def __str__(self) -> str:
         # Add header information
         text = "\nSCOPE (SCOPED SYMBOL TABLE):\n"
-        text += f"Scope name    : {self.scope_name}\n"
+        text += f"Scope name    : {self.scope_name if self.scope_name.startswith('<') else repr(self.scope_name)}\n"
         text += f"Scope level   : {self.scope_level}\n"
-        text += f"Parent scope  : {self.parent_scope.scope_name if self.parent_scope else '<none>'}\n\n"
+        text += f"Parent scope  : {(self.parent_scope.scope_name if self.parent_scope.scope_name.startswith('<') else repr(self.parent_scope.scope_name)) if self.parent_scope else '<none>'}\n\n"
         text += "Scope symbol table contents\n"
         text += "---------------------------\n\n"
 
@@ -624,6 +628,7 @@ class SymbolTable:
         """
         Adds a symbol to the symbol table
         """
+        symbol.scope_level = self.scope_level
         log(f"SymbolTable {repr(self.scope_name)}: define {repr(str(symbol))} into scope {repr(self.scope_name)}", level=LOGGING_HIGHLY_VERBOSE)
         self._symbols[symbol.name] = symbol
 
@@ -654,17 +659,17 @@ class SymbolTable:
 ###########################################
 
 class ActivationRecord:
-    def __init__(self, name: str, ar_type: ActivationRecordType, scope_level: int):
+    def __init__(self, name: str, ar_type: ActivationRecordType, nesting_level: int):
         self.name: str = name
         self.ar_type: ActivationRecordType = ar_type
-        self.scope_level: int = scope_level
+        self.scope_level: int = nesting_level
         self._members: dict[str, Member] = {}
 
     def __str__(self):
         message = "\nACTIVATION RECORD:\n"
-        message += f"Scope name    : {self.name}\n"
-        message += f"Scope level   : {self.scope_level}\n"
-        message += f"AR type       : {self.ar_type.value}\n\n"
+        message += f"Scope name    : {self.name if self.name.startswith('<') else repr(self.name)}\n"
+        message += f"AR type       : {self.ar_type.value}\n"
+        message += f"Nesting level : {self.scope_level}\n\n"
         message += "Activation record contents\n"
         message += "--------------------------\n"
         if self._members == {}:
@@ -948,10 +953,10 @@ class Lexer:
                     char_pos=[self.lineno, self.linecol-1]
                 )
 
-            token = Token(TokenType.FLOAT_LITERAL, float(number), self.lineno, self.linecol, startcol=start_pos)
+            token = Token(TokenType.FLOAT_LITERAL, Float(number), self.lineno, self.linecol, startcol=start_pos)
 
         else:
-            token = Token(TokenType.INTEGER_LITERAL, int(number), self.lineno, self.linecol, startcol=start_pos)
+            token = Token(TokenType.INTEGER_LITERAL, Int(number), self.lineno, self.linecol, startcol=start_pos)
 
         return token
 
@@ -1328,7 +1333,9 @@ class Parser:
         """
         procedure_call -> variable `LPAREN` (empty | expr (`COMMA` expr)*) `RPAREN`
         """
-        procedure_var = self.current_token
+        procedure_var = Var(
+            self.current_token
+        )
         
         self.eat(TokenType.IDENTIFIER)
         
@@ -1726,7 +1733,7 @@ class SemanticAnalyser(NodeVisitor):
                 message="Cannot declare procedure with same name"
             )
 
-        proc_symbol = ProcedureSymbol(proc_name, proc_params)
+        proc_symbol = ProcedureSymbol(proc_name, node)
         self.current_scope.define(proc_symbol)
 
         log(f"SemanticAnalyser: creating {repr(proc_name)} symbol table", level=LOGGING_VERBOSE)
@@ -1750,8 +1757,19 @@ class SemanticAnalyser(NodeVisitor):
         self.current_scope = self.current_scope.parent_scope
 
     def visit_ProcedureCall(self, node: ProcedureCall):
+        procedure_id = node.procedure_var.id
+        procedure_symbol: ProcedureSymbol = self.current_scope.lookup(procedure_id)
+        if procedure_symbol is None:
+            self.error(
+                error_code=ErrorCode.NAME_ERROR,
+                token=node.procedure_var.token,
+                message=f"Procedure {repr(procedure_id)} was never initialised"
+            )
+
         for param_node in node.literal_params:
             self.visit(param_node)
+
+        node.procedure_symbol = procedure_symbol
 
     def visit_AssignOp(self, node: AssignOp):
         var_id = node.left.id
@@ -1840,7 +1858,7 @@ class Interpreter(NodeVisitor):
         ar = ActivationRecord(
             name="<program>",
             ar_type=ActivationRecordType.PROGRAM,
-            scope_level=1
+            nesting_level=1
         )
         log(f"Interpreter: created AR", repr(ar.name), repr(ar), level=LOGGING_VERBOSE)
 
@@ -1874,6 +1892,7 @@ class Interpreter(NodeVisitor):
 
         if node.expr_node is not None:
             variable_value = self.visit(node.expr_node)
+            print(variable_id, variable_value)
 
             current_ar.set(
                 Member(
@@ -1897,14 +1916,52 @@ class Interpreter(NodeVisitor):
     def visit_ProcedureDecl(self, node):
         pass
 
-    def visit_ProcedureCall(self, node):
-        pass
+    def visit_ProcedureCall(self, node: ProcedureCall):
+        procedure_name = node.procedure_var.id
+        log(f'Interpreter: calling procedure {repr(procedure_name)}', level=LOGGING_VERBOSE)
+
+        ar = ActivationRecord(
+            name=procedure_name,
+            ar_type = ActivationRecordType.PROCEDURE,
+            nesting_level=node.procedure_symbol.scope_level + 1
+        )
+        log(f"Interpreter: created AR", repr(ar.name), repr(ar), level=LOGGING_VERBOSE)
+
+        formal_params = node.procedure_symbol.procedure_node.params
+        literal_params = node.literal_params
+
+        for formal_param, literal_param in zip(formal_params, literal_params):
+            param_value = self.visit(literal_param)
+            ar.set(
+                Member(
+                    name=formal_param.var_node.id,
+                    value=param_value,
+                    datatype=formal_param.type_node.id
+                )
+            )
+            log(f"Interpreter: ProcedureCall param <{formal_param.type_node.id}> {repr(formal_param.var_node.id)} = {repr(param_value)}", level=LOGGING_HIGHLY_VERBOSE)
+
+        self.call_stack.push(ar)
+        log(f"Interpreter: pushed AR {repr(ar.name)} onto call stack", level=LOGGING_VERBOSE)
+
+        log(f"Interpreter: executing procedure {repr(procedure_name)}", level=LOGGING_VERBOSE)
+        # Execute function
+        self.visit(node.procedure_symbol.procedure_node.compound_node)
+        log(f"Interpreter: execution complete for procedure {repr(procedure_name)}", level=LOGGING_VERBOSE)
+
+        log("Interpreter: ACTIVATION RECORD", repr(ar.name), level=LOGGING_HIGHLY_VERBOSE)
+        log(str(ar), level=LOGGING_HIGHLY_VERBOSE, prefix_per_line=" |   ")
+        log("Interpreter: ACTIVATION RECORD", repr(ar.name), "END", level=LOGGING_HIGHLY_VERBOSE)
+
+        self.call_stack.pop()
+        log(f"Interpreter: lifted AR {repr(ar.name)} from call stack", level=LOGGING_VERBOSE)
 
     def visit_AssignOp(self, node: AssignOp):
         current_ar = self.call_stack.peek()
         variable_id = node.left.id
         variable_type_name = current_ar.get(variable_id).datatype
         variable_value = self.visit(node.right)
+        print("assign", variable_value)
 
         if "?" not in variable_type_name:
             variable_type_name = "?" + variable_type_name
@@ -1916,31 +1973,29 @@ class Interpreter(NodeVisitor):
                 variable_type_name
             )
         )
-        #if variable_id in self.global_scope:
-        #    self.global_scope[variable_id][1] = self.visit(node.right)
-        #else:
-        #    raise ValueError("Interpreter :: Attempted to assign value to uninitialised variable!")
         log(f"Interpreter: AssignOp <{variable_type_name}> {repr(variable_id)} = {repr(variable_value)}", level=LOGGING_HIGHLY_VERBOSE)
 
     def visit_UnaryOp(self, node: UnaryOp):
-        if node.op.type == TokenType.PLUS:
-            return +self.visit(node.expr)
-        elif node.op.type == TokenType.MINUS:
-            return -self.visit(node.expr)
+        if node.op.type == TokenType.MINUS:
+            value = self.visit(node.expr)
+            return negate(value)
 
     def visit_BinOp(self, node: BinOp):
-        left = self.visit(node.left)
-        right = self.visit(node.right)
+        left_value = self.visit(node.left)
+        right_value = self.visit(node.right)
         if node.op.type == TokenType.PLUS:
-            return left + right
+            print(right_value, "+", left_value)
+            value = add(left_value, right_value)
+            print("=", value)
+            return value
         elif node.op.type == TokenType.MINUS:
-            return left - right
+            return sub(left_value, right_value)
         elif node.op.type == TokenType.MULT:
-            return left * right
+            return mult(left_value, right_value)
         elif node.op.type == TokenType.INTEGER_DIV:
-            return int(left // right)
+            return floordiv(left_value, right_value)
         elif node.op.type == TokenType.FLOAT_DIV:
-            return left / right
+            return truediv(left_value, right_value)
 
     def visit_TypeNode(self, node: TypeNode):
         # Not utilised yet
