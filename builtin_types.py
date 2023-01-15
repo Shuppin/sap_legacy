@@ -1,3 +1,6 @@
+"""
+Module containing all the built-in types
+"""
 class Type:
     def __init__(self, literal_value: str) -> None:
         self.literal_value: str = str(literal_value)

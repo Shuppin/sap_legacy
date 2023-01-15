@@ -1,9 +1,0 @@
-def Alpha(int a, int b) {
-    int x := (a + b)*2;
-};
-
-//float single_decl_float := ((1 + 3 + 4) / 2)*3.14;
-
-float t := 5.5 + 1;
-t := 5;
-int f := 4 + 1;

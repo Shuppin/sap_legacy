@@ -1,8 +1,13 @@
-from math           import floor
-from inspect        import getfullargspec
-from collections    import Counter
+"""
+Module which is responsible for all arithmetic operations.
+
+Essentially it converts SAP types into native Python types
+and performs native python arithmetic on them
+"""
+from math import floor
 
 from builtin_types  import *
+from overloading    import create_overload
 
 __all__ = [
     "add",
@@ -13,68 +18,11 @@ __all__ = [
     "negate"
 ]
 
-class _overload:
-    def __init__(self, f):
-        self.cases = {}
+# TODO: Implement multi-file logging
+# and subsequently eliminate all the excessive printing
+#logger = logging.getLogger(__name__)
 
-    def overload(self):
-        def store_function(f):
-            type_annotations = getfullargspec(f).annotations
-            if type_annotations.get("return"):
-                del type_annotations["return"]
-            if self.cases.get(tuple(type_annotations.values())):
-                raise Exception("Function " + repr(f.__name__) + " has duplicate overloads!")
-            self.cases[tuple(type_annotations.values())] = f
-            return self
-        return store_function
-
-    def _rearrange_values(self, spec_list, types_list):
-
-        if not len(spec_list) == len(types_list):
-            print("Returning none due to size difference")
-            return None
-
-        rearranged_values = [None]*len(types_list)
-        spec_occurance_counter = Counter(spec_list)
-        value_occurance_counter = Counter(types_list)
-
-        if not spec_occurance_counter == value_occurance_counter:
-            print("Returning none due to different lists")
-            print(types_list)
-            print(spec_occurance_counter)
-            print(value_occurance_counter)
-            return None
-
-        for value in types_list:
-            if value_occurance_counter.get(type(value)) is None:
-                value_occurance_counter[type(value)] = 1
-            else:
-                value_occurance_counter[type(value)] += 1
-            try:
-                rearranged_values[[i for i, spec in enumerate(spec_list) if issubclass(spec, type(value))][value_occurance_counter[type(value)]-1]] = value
-            except IndexError:
-                return None
-
-        return tuple(rearranged_values)
-
-    def __call__(self, *args):
-        for existing_arguments in self.cases.keys():
-            sorted_values = None
-            sorted_values = self._rearrange_values(existing_arguments, [type(arg) for arg in args])
-            if sorted_values is not None:
-                break
-
-        if sorted_values is None:
-            return None
-            
-        print("Overloading args: ", [type(arg) for arg in sorted_values])
-        function = self.cases.get(tuple([type(arg) for arg in sorted_values]))
-        if function is None:
-            return None
-        return function(*sorted_values)
-
-
-@_overload
+@create_overload
 def add() -> Type:...
 
 @add.overload()
@@ -93,7 +41,7 @@ def add(float1: Float, float2: Float):
     return Float(str(float(float1.literal_value)+float(float2.literal_value)))
 
 
-@_overload
+@create_overload
 def sub() -> Type:...
 
 @sub.overload()
@@ -109,7 +57,7 @@ def sub(float1: Float, float2: Float):
     return Float(str(float(float1.literal_value)-float(float2.literal_value)))
 
 
-@_overload
+@create_overload
 def mult() -> Type:...
 
 @mult.overload()
@@ -125,7 +73,7 @@ def mult(float1: Float, float2: Float):
     return Float(str(float(float1.literal_value)*float(float2.literal_value)))
 
 
-@_overload
+@create_overload
 def truediv() -> Type:...
 
 @truediv.overload()
@@ -145,7 +93,7 @@ def truediv(float1: Float, float2: Float):
     return Float(str(float(float1.literal_value)-float(float2.literal_value)))
 
 
-@_overload
+@create_overload
 def floordiv() -> Type: ...
 
 @floordiv.overload()
@@ -161,7 +109,7 @@ def floordiv(float1: Float, float2: Float):
     return Int(str(floor(float(float1.literal_value)/float(float2.literal_value))))
 
 
-@_overload
+@create_overload
 def negate() -> Type: ...
 
 @negate.overload()
@@ -173,6 +121,7 @@ def negate(int1: Float):
     return Float(-int(int1.literal_value))
 
 if __name__ == '__main__':
+    # I'm so good at writing tests
     print("Adding")
     print(add(Int(1), Int(1)))
     print(add(Int(1), Float(1.34)))

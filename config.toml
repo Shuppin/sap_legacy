@@ -1,0 +1,30 @@
+#===---       NOT IMPLEMENTED       ---===#
+
+# Control how the program acts
+[behaviour]
+# The valid modes are: "file" or "cmdline"
+read_mode       = "file"
+logging_enabled = true
+
+# Modifies the output of the log file
+[logging]
+level       = "ALL"
+destination = "logs/runtime.log"
+format      = "%(asctime)s [%(filename)s:%(lineno)04d] %(levelname)-8s - %(message)s"
+datefmt     = "%H:%M:%S"
+
+# Define the logging levels used by the logger
+[logging.levels]
+CRITICAL        = 50
+INFO            = 20
+DEBUG           = 10
+VERBOSE         = 9
+HIGHLY_VERBOSE  = 8
+EAT_STACK       = 7
+ALL             = 5
+
+# Dev options only used to assist with debugging
+[dev]
+default_filename  = "examples/proc1.sap"
+raise_error_stack = false
+strict_semicolons = true
