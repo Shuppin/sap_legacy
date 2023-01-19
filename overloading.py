@@ -7,6 +7,28 @@ function a call, it just looks for any match (including subclasses!)
 # spent ages trying to implement the lack of ordering as
 # a feature, but it sounds like a lack of trying here :(
 from inspect import getfullargspec
+from logging import Formatter
+from logging import FileHandler
+from logging import getLogger
+
+from config import ConfigParser
+
+# TODO: Document this little snippet
+
+config = ConfigParser()
+
+formatter = Formatter(config.getstr("logging.format"), datefmt=config.getstr("logging.datefmt"))
+        
+handler = FileHandler(config.getstr("logging.destination"), mode="a")
+handler.setFormatter(formatter)
+
+log_level = config.getint(f"logging.levels.{config.getstr('logging.level')}")
+
+logger = getLogger("overloading")
+logger.setLevel(log_level)
+logger.addHandler(handler)
+
+LOG_ALL = config.getint("logging.levels.ALL")
 
 # Yes I know the copious  amounts of printing is horrible, i'll fix it later
 
@@ -41,7 +63,12 @@ class create_overload:
 
         # If the function is none then existing_arguments shouldn't be in self.cases
         if function is None:
-            raise Exception("Oopsie we shouldn't be here!")
+            logger.critical("Overload module could not find function asociated with given args, invalid state")
+            if config.getbool("dev.raise_error_stack"):
+                raise Exception("Oopsie we shouldn't be here!")
+            else:
+                print("(Internal) Overload module could not find function asociated with given args, invalid state")
+                exit()
 
         # Call the function and return the value of it
         return function(*sorted_values)
@@ -63,7 +90,7 @@ class create_overload:
         """
         # Ensure that the objects and types are of the same size
         if len(objects) != len(types):
-            print("Returned None due to list size mismatch")
+            logger.log(f"{type(self).__name__}._rearrange_objects(): Returned None due to list size mismatch", level=LOG_ALL)
             return None
 
         rearranged_objects = []
@@ -74,13 +101,13 @@ class create_overload:
             compatible_types = [obj for obj in objects if issubclass(type(obj), t)]
             # If the length of this is 0, that means there are no compatiple types left
             if len(compatible_types) == 0:
-                print("Could not find an object which is compatible with", t)
+                logger.log(msg=f"{type(self).__name__}._rearrange_objects(): Could not find an object which is compatible with {t}", level=LOG_ALL)
                 return None
             else:
                 # Gets first object from the compatible types, finds
                 # it's position and removes it from the object list
                 # and adds it to the new object list 
-                print("The compatible types for", t, "are", compatible_types)
+                logger.log(msg=f"{type(self).__name__}._rearrange_objects(): The compatible types for {t} are {compatible_types}", level=LOG_ALL)
                 first_object = compatible_types[0]
                 first_object_index = objects.index(first_object)
                 rearranged_objects.append(objects.pop(first_object_index))

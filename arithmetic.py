@@ -4,10 +4,15 @@ Module which is responsible for all arithmetic operations.
 Essentially it converts SAP types into native Python types
 and performs native python arithmetic on them
 """
+from logging import Formatter
+from logging import FileHandler
+from logging import getLogger
 from math import floor
 
-from builtin_types  import *
+from config         import ConfigParser
 from overloading    import create_overload
+
+from builtin_types  import *
 
 __all__ = [
     "add",
@@ -18,31 +23,41 @@ __all__ = [
     "negate"
 ]
 
-# TODO: Implement multi-file logging
-# and subsequently eliminate all the excessive printing
-#logger = logging.getLogger(__name__)
+# TODO: Document this snippet
+
+config = ConfigParser()
+
+formatter = Formatter(config.getstr("logging.format"), datefmt=config.getstr("logging.datefmt"))
+        
+handler = FileHandler(config.getstr("logging.destination"), mode="a")
+handler.setFormatter(formatter)
+
+log_level = config.getint(f"logging.levels.{config.getstr('logging.level')}")
+
+logger = getLogger("arithmetic")
+logger.setLevel(log_level)
+logger.addHandler(handler)
+
+LOG_ALL = config.getint("logging.levels.ALL")
 
 @create_overload
-def add() -> Type:...
+def add() -> Type: ...
 
 @add.overload()
 def add(int1: Int, int2: Int):
-    print("ints")
     return Int(str(int(int1.literal_value)+int(int2.literal_value)))
 
 @add.overload()
 def add(int1: Int, float1: Float):
-    print("int, float")
     return Float(str(int(int1.literal_value)+float(float1.literal_value)))
 
 @add.overload()
 def add(float1: Float, float2: Float):
-    print("floats")
     return Float(str(float(float1.literal_value)+float(float2.literal_value)))
 
 
 @create_overload
-def sub() -> Type:...
+def sub() -> Type: ...
 
 @sub.overload()
 def sub(int1: Int, int2: Int):
@@ -58,7 +73,7 @@ def sub(float1: Float, float2: Float):
 
 
 @create_overload
-def mult() -> Type:...
+def mult() -> Type: ...
 
 @mult.overload()
 def mult(int1: Int, int2: Int):
@@ -74,15 +89,12 @@ def mult(float1: Float, float2: Float):
 
 
 @create_overload
-def truediv() -> Type:...
+def truediv() -> Type: ...
 
 @truediv.overload()
 def truediv(int1: Int, int2: Int):
     result = int(int1.literal_value)/int(int2.literal_value)
-    if result == int(result):
-        return Int(str(result))
-    else:
-        return Float(str(result))
+    return Float(str(result))
 
 @truediv.overload()
 def truediv(int1: Int, float1: Float):
@@ -119,6 +131,7 @@ def negate(int1: Int):
 @negate.overload()
 def negate(int1: Float):
     return Float(-int(int1.literal_value))
+    
 
 if __name__ == '__main__':
     # I'm so good at writing tests

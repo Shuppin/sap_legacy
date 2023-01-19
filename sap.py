@@ -2,13 +2,6 @@ from __future__ import annotations
 
 import logging
 
-# TODO: Implement toml config file loading & parsing
-try:
-    import tomllib
-except ModuleNotFoundError:
-    print("Python v3.11 or higher is required to run this program")
-    exit()
-
 from collections    import defaultdict
 from enum           import Enum
 from inspect        import currentframe
@@ -18,34 +11,21 @@ from sys            import argv
 from typing         import Any
 from time           import time as current_time
 
+from config         import ConfigParser
+
 from arithmetic     import *
 from builtin_types  import *
 
 # TODO:
 # * Move modules into package (need to figure how that works first)
-# * Fully implement static typing
+# * Fully implement static typing (~50%)
+# * Add function to interpreter to find first token in node object
+# * Update error printer to allow for a list of tokens
+# * Add changelog and actually use it
 
-### Constants
 
-# The valid modes are: "file" or "cmdline"
-MODE = "file"
-
-# Should the program output a log
-LOGGING_ENABLED = True
-
-# If no file was specified in the arguments, use this instead
-# Overrides default cmdline behaviour
-_DEV_DEFAULT_FILENAME = "examples/testing_typing.sap"
-# This defines how errors are treated
-# If true, it will raise an error with the full stack trace,
-# useful for debugging purposes
-# If false, it will print the error normally
-_DEV_RAISE_ERROR_STACK = False
-# Strict semicolons are treated as line terminators and
-# are required after every statement
-# Non-strict semicolons are treated as statement separators
-# and are only required between statements
-_DEV_STRICT_SEMICOLONS = True
+config_path = "config.toml"
+config = ConfigParser(config_path, override_logfile=True)
 
 # Basic implementation of file name tracking
 current_filename = "<cmdline>"
@@ -68,7 +48,7 @@ class TokenType(Enum):
     INTEGER_DIV     = '//'  # Currently not in use, may be removed in future
     FLOAT_DIV       = '/'
     PLUS            = '+'
-    MINUS           = '-'
+    SUB             = '-'
     RETURNS_OP      = '->'
     LPAREN          = '('
     RPAREN          = ')'
@@ -89,24 +69,6 @@ class TokenType(Enum):
     EOF             = 'EOF'
 
 
-class DataType(Enum):
-    UNDEFINED   = "UNDEFINED"
-    INTEGER     = "INTEGER"
-    FLOAT       = "FLOAT"
-
-    @classmethod
-    def from_tokentype(cls, tokentype: TokenType):
-        type_mapping = {
-            TokenType.INTEGER: cls.INTEGER,
-            TokenType.FLOAT: cls.FLOAT
-        }
-        datatype = type_mapping.get(tokentype)
-        if datatype is None:
-            raise TypeError(f"TokenType {repr(tokentype)} does not map to a DataType")
-        else:
-            return datatype
-
-
 class ActivationRecordType(Enum):
     PROGRAM     = "PROGRAM"
     PROCEDURE   = "PROCEDURE"
@@ -120,16 +82,13 @@ class ErrorCode(Enum):
 
 # Temporarily in place of config file
 class LogLevel:
-    CRITICAL        = 50
-    INFO            = 20
-    DEBUG           = 10
-    VERBOSE         = 9
-    HIGHLY_VERBOSE  = 8
-    EAT_STACK       = 7
-    ALL             = 5
-    # Level that will be logged to file
-    CURRENT         = ALL
-
+    CRITICAL        = config.getint("logging.levels.CRITICAL")
+    INFO            = config.getint("logging.levels.INFO")
+    DEBUG           = config.getint("logging.levels.DEBUG")
+    VERBOSE         = config.getint("logging.levels.VERBOSE")
+    HIGHLY_VERBOSE  = config.getint("logging.levels.HIGHLY_VERBOSE")
+    EAT_STACK       = config.getint("logging.levels.EAT_STACK")
+    ALL             = config.getint("logging.levels.ALL")
 
 ###########################################
 #                                         #
@@ -164,14 +123,13 @@ class Member:
 
     Data class to represent item within activation record
     """
-    def __init__(self, name: str, value: Any, datatype: str):
+    def __init__(self, name: str, value: Any):
+        # May update to Symbol in future
         self.name: str = name
         self.value: Any = value
-        # May update to Symbol in future
-        self.datatype: str = datatype
 
     def __str__(self):
-        return f"<{self.datatype}> {self.name} = {repr(self.value)}"
+        return f"<{self.value.__class__.__name__}> {self.name} = {repr(self.value)}"
 
 
 ###########################################
@@ -270,7 +228,7 @@ class BaseError(Exception):
         log(f"{type(self).__name__}: Program terminating with a success state", level=LogLevel.INFO)
 
         # Raise error or just print it normally
-        if _DEV_RAISE_ERROR_STACK:
+        if config.getbool("dev.raise_error_stack"):
             print(error_message)
             raise self
         else:
@@ -298,6 +256,12 @@ class SemanticAnalyserError(BaseError):
     """
     pass
 
+
+class InterpreterError(BaseError):
+    """
+    For interpreter specific errors
+    """
+    pass
 
 ###########################################
 #                                         #
@@ -486,7 +450,7 @@ class TypeNode(LeafNode):
     def __init__(self, token):
         super().__init__(token)
         self.token: Token = token
-        self.id = self.token.type.name
+        self.id = self.token.type
 
 
 class Var(LeafNode):
@@ -594,8 +558,8 @@ class SymbolTable:
         # <builtins> table, which represents all the built-in
         # types. These are defined internally here:
         if self.scope_level == 0:
-            self.define(BuiltinSymbol("INTEGER"))
-            self.define(BuiltinSymbol("FLOAT"))
+            self.define(BuiltinSymbol(Int))
+            self.define(BuiltinSymbol(Float))
             log("SymbolTable: Defined built-in symbols for", repr(self.scope_name), level=LogLevel.VERBOSE)
 
     def __str__(self) -> str:
@@ -610,7 +574,11 @@ class SymbolTable:
         # Organise contents of symbol table by symbol type.
         # This excludes the built-in symbol type, which is always printed first.
         symbols = defaultdict(list)
-        for _, val in sorted(self._symbols.items()):
+        
+        # This is awful i know, TODO: Make this look neater
+        stringified_keys = list(map(lambda key_value_tuple: (getattr(key_value_tuple[0], "__name__", str(key_value_tuple[0])), key_value_tuple[1]), self._symbols.items()))
+        
+        for _, val in sorted(stringified_keys):
             symbols[val.__class__.__name__].append(val)
 
         symbols: dict[str, list] = dict(symbols)
@@ -700,7 +668,7 @@ class ActivationRecord:
             _, member_objects = zip(*self._members.items())
             grouped_members = defaultdict(list)
             for member in member_objects:
-                grouped_members[member.datatype].append(member)
+                grouped_members[member.value.__class__.__name__].append(member)
 
             for _, members in grouped_members.items():
                 message += "\n"
@@ -810,16 +778,16 @@ class Lexer:
     Token[type = type.INTEGER_LITERAL, id = '2', start_pos = 4]
     ```
     """
-    def __init__(self, text):
-        self.text: str = text
+    def __init__(self, src):
+        self.src: str = src
         self.pos: int = 0
         self.lineno: int = 1
         self.linecol: int = 0
-        self.current_char: str | None = self.text[self.pos]
+        self.current_char: str | None = self.src[self.pos]
 
         # Just self.text split up into a list of each line
         # Used by the error reporter
-        self.text_lines: list[str] = self.text.split('\n')
+        self.src_lines: list[str] = self.src.split('\n')
 
         # Used to keep track how many times
         # the lexer tries to get the next token
@@ -827,10 +795,10 @@ class Lexer:
         # of the code
         self.reached_end_counter = 0
 
-        self.RESERVED_KEYWORDS: dict = {
-            'int': TokenType.INTEGER,
-            'float': TokenType.FLOAT,
-            'def': TokenType.DEFINITION
+        self.RESERVED_KEYWORDS: dict[str, tuple[TokenType, Type | None]] = {
+            'int'   :   (TokenType.INTEGER, Int),
+            'float' :   (TokenType.FLOAT, Float),
+            'def'   :   (TokenType.DEFINITION, None)
         }
         log("Lexer: created `RESERVED_KEYWORDS` table")
         log("Lexer.__init__() complete", stackoffset=1)
@@ -851,7 +819,7 @@ class Lexer:
             ErrorCode.SYNTAX_ERROR,
             message,
             position=char_pos,
-            surrounding_lines=self.text_lines
+            surrounding_lines=self.src_lines
         )
         log(f"Lexer: displaying SyntaxError: {repr(message)} at <{self.lineno}:{self.linecol}>", stackoffset=1)
         error.trigger()
@@ -867,7 +835,7 @@ class Lexer:
             self.linecol = 0
 
         # If `self.pos` has reached the end of the code
-        if self.pos > len(self.text) - 1:
+        if self.pos > len(self.src) - 1:
             # After the lexer has tried multiple times to get
             # the next token while being at the end of the code.
             # This behaviour occurs when there is an error with
@@ -881,15 +849,15 @@ class Lexer:
             self.current_char = None
         # Else advance as normal
         else:
-            self.current_char = self.text[self.pos]
+            self.current_char = self.src[self.pos]
 
     def peek(self) -> None | str:
         """Peeks at the next character in the code and returns it"""
         peek_pos = self.pos + 1
-        if peek_pos > len(self.text) - 1:
+        if peek_pos > len(self.src) - 1:
             return None
         else:
-            return self.text[peek_pos]
+            return self.src[peek_pos]
 
     # Lexer utility functions
 
@@ -931,9 +899,12 @@ class Lexer:
             self.advance()
 
         # Gets the token type associated with `result` if applicable, else default to `type.IDENTIFIER`
-        token_type = self.RESERVED_KEYWORDS.get(result, TokenType.IDENTIFIER)
+        token_type, type_ref = self.RESERVED_KEYWORDS.get(result, (TokenType.IDENTIFIER, None))
+        
+        if type_ref is None:
+            type_ref = result
 
-        token = Token(token_type, result, self.lineno, self.linecol, startcol=start_pos)
+        token = Token(token_type, type_ref, self.lineno, self.linecol, startcol=start_pos)
 
         return token
 
@@ -1051,7 +1022,7 @@ class Lexer:
                     self.advance()
                     self.advance()
                 else:
-                    token = Token(TokenType.MINUS, self.current_char, self.lineno, self.linecol)
+                    token = Token(TokenType.SUB, self.current_char, self.lineno, self.linecol)
                     self.advance()
 
                 return token
@@ -1138,8 +1109,8 @@ class Parser:
     ```
     """
 
-    def __init__(self, text):
-        self.text: str = text
+    def __init__(self, src):
+        self.text: str = src
         self.lexer: Lexer = Lexer(self.text)
         log("Parser: pre-loading first token")
         self.current_token: Token = self.lexer.get_next_token()
@@ -1155,7 +1126,7 @@ class Parser:
         Create and raise a ParserError object
         """
         log(f"Parser: displaying {error_code.value}: {repr(message)} at <{token.lineno}:{token.linecol}>", stackoffset=1)
-        error = ParserError(error_code, message, token=token, surrounding_lines=self.lexer.text_lines)
+        error = ParserError(error_code, message, token=token, surrounding_lines=self.lexer.src_lines)
         error.trigger()
 
     def eat(self, expected_type: TokenType):
@@ -1253,7 +1224,7 @@ class Parser:
                         | statement `SEMI` statement_list
         """
         node = self.statement()
-        if _DEV_STRICT_SEMICOLONS:
+        if config.getbool("dev.strict_semicolons"):
             self.semicolon_check(node)
 
         results = [node]
@@ -1261,7 +1232,7 @@ class Parser:
         while self.current_token.type == TokenType.SEMI:
             self.eat(TokenType.SEMI)
             statement = self.statement()
-            if _DEV_STRICT_SEMICOLONS:
+            if config.getbool("dev.strict_semicolons"):
                 self.semicolon_check(statement)
             results.append(statement)
 
@@ -1518,14 +1489,14 @@ class Parser:
         node = self.term()
 
         # term ((`PLUS`|`MINUS`) term)*
-        while self.current_token.type in (TokenType.PLUS, TokenType.MINUS):
+        while self.current_token.type in (TokenType.PLUS, TokenType.SUB):
             token = self.current_token
 
             if token.type == TokenType.PLUS:
                 self.eat(TokenType.PLUS)
 
-            elif token.type == TokenType.MINUS:
-                self.eat(TokenType.MINUS)
+            elif token.type == TokenType.SUB:
+                self.eat(TokenType.SUB)
 
             node = BinOp(left=node, op=token, right=self.term())
 
@@ -1567,8 +1538,8 @@ class Parser:
         token = self.current_token
 
         # `MINUS` factor
-        if token.type == TokenType.MINUS:
-            self.eat(TokenType.MINUS)
+        if token.type == TokenType.SUB:
+            self.eat(TokenType.SUB)
             node = UnaryOp(token, self.factor())
 
         # `INTEGER_LITERAL`
@@ -1673,9 +1644,9 @@ class SemanticAnalyser(NodeVisitor):
     """
     Constructs the symbol table and performs type-checks before runtime
     """
-    def __init__(self, text: str):
+    def __init__(self, src: str):
         super().__init__()
-        self.text_lines: list[str] = text.split('\n')
+        self.src_lines: list[str] = src.split('\n')
         self.current_scope: SymbolTable | None = None
         log("SemanticAnalyser.__init__() complete", stackoffset=1)
 
@@ -1684,7 +1655,7 @@ class SemanticAnalyser(NodeVisitor):
         Create and raise a SemanticAnalyserError object
         """
         log(f"SemanticAnalyser: displaying {error_code.value}: {repr(message)} at <{token.lineno}:{token.linecol}>")
-        error = SemanticAnalyserError(error_code, message, token, surrounding_lines=self.text_lines)
+        error = SemanticAnalyserError(error_code, message, token, surrounding_lines=self.src_lines)
         error.trigger()
 
     def analyse(self, tree: Node):
@@ -1763,7 +1734,7 @@ class SemanticAnalyser(NodeVisitor):
         self.current_scope = proc_scope
 
         for param in proc_params:
-            param_type = self.current_scope.lookup(param.type_node.id)
+            param_type = self.current_scope.lookup(param.type_node.token.id)
             param_name = param.var_node.id
             var_symbol = VarSymbol(param_name, param_type)
             self.current_scope.define(var_symbol)
@@ -1812,14 +1783,14 @@ class SemanticAnalyser(NodeVisitor):
         self.visit(node.right)
 
     def visit_TypeNode(self, node: TypeNode):
-        type_id = node.id
+        type_id = node.token.id
         type_symbol = self.current_scope.lookup(type_id)
 
         if type_symbol is None:
             self.error(
                 error_code=ErrorCode.NAME_ERROR,
                 token=node.token,
-                message=f"Unrecognised type {repr(type_id)}"
+                message=f"Unrecognised type {repr(type_id.__name__)}"
             )
         else:
             return type_symbol
@@ -1861,9 +1832,13 @@ class Interpreter(NodeVisitor):
 
     It also handles type-checking at runtime
     """
-    def __init__(self):
+    
+    # TODO: Replace raise statements with self.error()
+    
+    def __init__(self, src: str):
         super().__init__()
         self.call_stack = CallStack()
+        self.src_lines: list[str] = src.split('\n')
         log("Interpreter.__init__() complete", stackoffset=1)
 
     def interpret(self, tree: Node):
@@ -1873,6 +1848,14 @@ class Interpreter(NodeVisitor):
         and executes the code.
         """
         return self.visit(tree)
+    
+    def error(self, error_code: ErrorCode, token: Token, message):
+        """
+        Create and raise a InterpreterError object
+        """
+        log(f"Interpreter: displaying {error_code.value}: {repr(message)} at <{token.lineno}:{token.linecol}>")
+        error = InterpreterError(error_code, message, token, surrounding_lines=self.src_lines)
+        error.trigger()
 
     def visit_Program(self, node: Program):
         log(f"Interpreter: Interpreting tree", repr(node))
@@ -1904,7 +1887,7 @@ class Interpreter(NodeVisitor):
 
     def visit_VarDecl(self, node: VarDecl):
         variable_id = node.var_node.id
-        variable_type_name = node.type_node.id
+        variable_type = node.type_node.token.id
 
         if variable_id == "_":
             return
@@ -1912,32 +1895,49 @@ class Interpreter(NodeVisitor):
         current_ar = self.call_stack.peek()
 
         if node.expr_node is not None:
-            variable_value = self.visit(node.expr_node)
-            print(variable_id, variable_value)
+            expression_value = self.visit(node.expr_node)
+            
+            # Ensure type is correct
+            if variable_type != type(expression_value):
+                
+                # Attempt to parse to another type
+                expression_value = expression_value.to(variable_type)
+                
+                # If that fails, error
+                if expression_value is None:
+                    self.error(
+                        error_code=ErrorCode.TYPE_ERROR,
+                        token=node.left,
+                        message=f"Attempted to assign value with type <{type(expression_value).__name__}> to var with incompatible type <{variable_type.__name__}>"
+                    )
+                    
+                # Else, continue on as normal
 
             current_ar.set(
                 Member(
                     name=variable_id,
-                    value=variable_value,
-                    datatype=variable_type_name
+                    value=expression_value
                 )
             )
-            log(f"Interpreter: VarDecl <{variable_type_name}> {repr(variable_id)} = {repr(variable_value)}", level=LogLevel.HIGHLY_VERBOSE)
+            log(f"Interpreter: VarDecl <{variable_type.__name__}> {repr(variable_id)} = {expression_value}", level=LogLevel.HIGHLY_VERBOSE)
 
         else:
             current_ar.set(
                 Member(
                     name=variable_id,
-                    value=None,
-                    datatype=variable_type_name
+                    value=NoneType()
                 )
             )
-            log(f"Interpreter: VarDecl <{variable_type_name}> {repr(variable_id)} = None", level=LogLevel.HIGHLY_VERBOSE)
+            log(f"Interpreter: VarDecl <{variable_type.__name__}> {repr(variable_id)} = NoneType()", level=LogLevel.HIGHLY_VERBOSE)
 
     def visit_ProcedureDecl(self, node):
         pass
 
     def visit_ProcedureCall(self, node: ProcedureCall):
+        
+        # TODO: Add proper argument vs parameters checking
+        # i.e. Type comparison and length comparison
+        
         procedure_name = node.procedure_var.id
         log(f'Interpreter: calling procedure {repr(procedure_name)}', level=LogLevel.VERBOSE)
 
@@ -1956,8 +1956,7 @@ class Interpreter(NodeVisitor):
             ar.set(
                 Member(
                     name=formal_param.var_node.id,
-                    value=param_value,
-                    datatype=formal_param.type_node.id
+                    value=param_value
                 )
             )
             log(f"Interpreter: ProcedureCall param <{formal_param.type_node.id}> {repr(formal_param.var_node.id)} = {repr(param_value)}", level=LogLevel.HIGHLY_VERBOSE)
@@ -1979,44 +1978,76 @@ class Interpreter(NodeVisitor):
 
     def visit_AssignOp(self, node: AssignOp):
         current_ar = self.call_stack.peek()
+        variable_type = type(current_ar.get(node.left.id).value)
         variable_id = node.left.id
-        variable_type_name = current_ar.get(variable_id).datatype
-        variable_value = self.visit(node.right)
-        print("assign", variable_value)
-
-        if "?" not in variable_type_name:
-            variable_type_name = "?" + variable_type_name
-
+        evaluated_value = self.visit(node.right)
+        
+        # Ensure type is correct
+        if variable_type != type(evaluated_value) and variable_type != NoneType:
+            
+            # Attempt to parse to another type
+            evaluated_value = evaluated_value.to(variable_type)
+            
+            # If that fails, error
+            if evaluated_value is None:
+                self.error(
+                    error_code=ErrorCode.TYPE_ERROR,
+                    token=node.left,
+                    message=f"Attempted to assign value with type <{type(evaluated_value).__name__}> to var with incompatible type <{variable_type.__name__}>"
+                )
+                
+            # Else, continue on as normal
+                
+        # Update current variable on activation record
         current_ar.set(
             Member(
                 variable_id,
-                variable_value,
-                variable_type_name
+                evaluated_value
             )
         )
-        log(f"Interpreter: AssignOp <{variable_type_name}> {repr(variable_id)} = {repr(variable_value)}", level=LogLevel.HIGHLY_VERBOSE)
+        log(f"Interpreter: AssignOp <{variable_type.__name__}> {repr(variable_id)} = {evaluated_value}", level=LogLevel.HIGHLY_VERBOSE)
 
     def visit_UnaryOp(self, node: UnaryOp):
-        if node.op.type == TokenType.MINUS:
+        if node.op.type == TokenType.SUB:
             value = self.visit(node.expr)
-            return negate(value)
+            result = negate(value)
+            
+            if result is None:
+                self.error(
+                    error_code=ErrorCode.TYPE_ERROR,
+                    token=node.op,
+                    message=f"Unsupported operation {repr(node.op.id)} for <{type(value).__name__}>"
+                )
+                
+            return result
 
     def visit_BinOp(self, node: BinOp):
         left_value = self.visit(node.left)
         right_value = self.visit(node.right)
-        if node.op.type == TokenType.PLUS:
-            print(right_value, "+", left_value)
-            value = add(left_value, right_value)
-            print("=", value)
+        
+        mapping = {
+            TokenType.PLUS: add,
+            TokenType.SUB: sub,
+            TokenType.MULT: mult,
+            TokenType.INTEGER_DIV: floordiv,
+            TokenType.FLOAT_DIV: truediv
+        }
+        
+        operation = mapping.get(node.op.type)
+        
+        if operation is not None:
+            value = operation(left_value, right_value)
+            if value is None:
+                self.error(
+                    error_code=ErrorCode.TYPE_ERROR,
+                    token=node.op,  # TODO: Extract proper token from problematic node
+                    message=f"Unsupported operation {repr(node.op.id)} between <{type(left_value).__name__}> and <{type(right_value).__name__}>"
+                )
             return value
-        elif node.op.type == TokenType.MINUS:
-            return sub(left_value, right_value)
-        elif node.op.type == TokenType.MULT:
-            return mult(left_value, right_value)
-        elif node.op.type == TokenType.INTEGER_DIV:
-            return floordiv(left_value, right_value)
-        elif node.op.type == TokenType.FLOAT_DIV:
-            return truediv(left_value, right_value)
+        
+        else:
+            log(f"Unkown operation {repr(node.op.type)}, illegal state", level=config.getint("logging.levels.CRITICAL"))
+            exit()
 
     def visit_TypeNode(self, node: TypeNode):
         # Not utilised yet
@@ -2051,8 +2082,8 @@ class Driver:
     Driver code to execute the program
     """
     def __init__(self):
-        self.filename: str = _DEV_DEFAULT_FILENAME
-        self.mode: str = MODE
+        self.filename: str = config.getstr("dev.default_filename")
+        self.mode: str = config.getstr("behaviour.read_mode")
         log("Driver.__init__() complete")
 
     def run_program(self):
@@ -2090,12 +2121,13 @@ class Driver:
             # self.mode = "cmdline"
             # NOTE: cmdline disabled while testing to make execution quicker (Since I click run about 100 times/day (JOKE (satire)))
             # All of the following code should be removed in prod (not that I will ever reach that stage)
-            if isfile(_DEV_DEFAULT_FILENAME):
-                self.filename = _DEV_DEFAULT_FILENAME
+            dev_default_filname = config.getstr("dev.default_filename")
+            if isfile(dev_default_filname):
+                self.filename = dev_default_filname
                 self.mode = "file"
             else:
-                log(f"Driver._process_arguments(): Exception: file {repr(_DEV_DEFAULT_FILENAME)} does not exist!", level=LogLevel.CRITICAL)
-                raise Exception(f"file {repr(_DEV_DEFAULT_FILENAME)} does not exist!")
+                log(f"Driver._process_arguments(): Exception: file {repr(dev_default_filname)} does not exist!", level=LogLevel.CRITICAL)
+                raise Exception(f"file {repr(dev_default_filname)} does not exist!")
 
         elif len(argv) == 2:
             path = argv[1]
@@ -2110,9 +2142,9 @@ class Driver:
 
     def _process(self, code: str):
         log("Driver._process(): Initialising modules")
-        parser = Parser(code)
-        symbol_table = SemanticAnalyser(code)
-        interpreter = Interpreter()
+        parser = Parser(src=code)
+        symbol_table = SemanticAnalyser(src=code)
+        interpreter = Interpreter(code)
 
         log("Driver._process(): All modules initialised")
         log("Driver._process(): Evoking parser")
@@ -2178,7 +2210,7 @@ class Driver:
 #                                         #
 #   Main body                             #
 #                                         #
-###########################################
+########################################### 
 
 def log(*message, level: int = LogLevel.DEBUG, stackoffset: int = 0, prefix_per_line: str = ""):
     """
@@ -2191,23 +2223,24 @@ def log(*message, level: int = LogLevel.DEBUG, stackoffset: int = 0, prefix_per_
     `prefix_per_line`: What to prefix each line with, particularly useful
     for multi-line messages
     """
-    if LOGGING_ENABLED:
+    if config.getbool("behaviour.logging_enabled"):
         message = " ".join(map(str, message))
         message = message.split("\n")
         for line in message:
             logging.log(msg=prefix_per_line+line, level=level, stacklevel=3+stackoffset)
 
-if LOGGING_ENABLED:
+if config.getbool("behaviour.logging_enabled"):
+    # Hard coded because it is also hard coded in config.py
     logging.addLevelName(LogLevel.VERBOSE, "VERBOSE")
     logging.addLevelName(LogLevel.HIGHLY_VERBOSE, "HVERBOSE")
     logging.addLevelName(LogLevel.EAT_STACK, "EATSTACK")
     logging.addLevelName(LogLevel.ALL, "ALL")
     logging.basicConfig(
-        filename='logs/runtime.log',
-        filemode='w',
-        format='%(asctime)s [%(filename)s:%(lineno)04d] %(levelname)-8s - %(message)s',
-        datefmt='%H:%M:%S',
-        level=LogLevel.CURRENT
+        filename=config.getstr("logging.destination"),
+        filemode='a',
+        format=config.getstr("logging.format"),
+        datefmt=config.getstr("logging.datefmt"),
+        level=config.getint(f"logging.levels.{config.getstr('logging.level')}")
     )
 
 if __name__ == '__main__':

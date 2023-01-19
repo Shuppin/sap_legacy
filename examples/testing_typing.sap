@@ -1,2 +1,5 @@
-int f := 4 + 1;
-float e := 4 + 3.14;
+def test_func(int a) {
+    int b := 4 + a;
+};
+
+test_func(7.2);

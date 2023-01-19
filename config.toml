@@ -1,9 +1,8 @@
-#===---       NOT IMPLEMENTED       ---===#
-
 # Control how the program acts
 [behaviour]
 # The valid modes are: "file" or "cmdline"
 read_mode       = "file"
+# Should the program output to a log file
 logging_enabled = true
 
 # Modifies the output of the log file
@@ -25,6 +24,16 @@ ALL             = 5
 
 # Dev options only used to assist with debugging
 [dev]
-default_filename  = "examples/proc1.sap"
+# If no file was specified in the arguments, use this instead
+# Overrides default cmdline behaviour
+default_filename  = "examples/testing_typing.sap"
+# This defines how errors are treated
+# If true, it will raise an error with the full stack trace,
+# useful for debugging purposes
+# If false, it will print the error normally
 raise_error_stack = false
+# Strict semicolons are treated as line terminators and
+# are required after every statement
+# Non-strict semicolons are treated as statement separators
+# and are only required between statements
 strict_semicolons = true
