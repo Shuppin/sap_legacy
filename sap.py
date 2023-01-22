@@ -23,7 +23,7 @@ from modules.builtin_types  import *
 #   - Mapping for binop in unop defining what datatypes are returned
 # * Verify log & config file paths
 
-__version__ = "0.0.1-pre.28"
+__version__ = "0.0.1-pre.30"
 
 config_path = "config.toml"
 config = ConfigParser(config_path, override_logfile=True)

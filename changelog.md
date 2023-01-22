@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.0.1-pre.30] - 22-01-2023
+
+### Changes
+
+- Still getting used to this versioning thing lol
+
+## [0.0.1-pre.29] - 22-01-2023
+
+### Removed
+
+- `__pycache__` folders
+
 ## [0.0.1-pre.28] - 22-01-2023
 
 ### Added
