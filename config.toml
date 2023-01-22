@@ -8,7 +8,7 @@ logging_enabled = true
 # Modifies the output of the log file
 [logging]
 level       = "ALL"
-destination = "logs/runtime.log"
+destination = "runtime.log"
 format      = "%(asctime)s [%(filename)s:%(lineno)04d] %(levelname)-8s - %(message)s"
 datefmt     = "%H:%M:%S"
 

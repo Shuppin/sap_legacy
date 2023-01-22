@@ -21,9 +21,8 @@ from modules.builtin_types  import *
 # * Move type checker to semantic analyser?
 #   Attempted, will increase complexity with current solution, so maybe a future iteration
 #   - Mapping for binop in unop defining what datatypes are returned
-# * Verify log & config file paths
 
-__version__ = "0.0.1-pre.31"
+__version__ = "0.0.1-pre.32"
 
 config_path = "config.toml"
 config = ConfigParser(config_path, override_logfile=True)

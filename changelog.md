@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.0.1-pre.32] - 22-01-2023
+
+### Added
+
+- Checks to verify the destination of the `runtime.log` file
+
 ## [0.0.1-pre.31] - 22-01-2023
 
 ### Removed

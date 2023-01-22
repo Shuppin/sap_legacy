@@ -7,6 +7,9 @@ except ModuleNotFoundError:
     print("Python v3.11 or higher is required to run this program")
     exit()
     
+from os.path    import exists
+from os         import mkdir
+
 import logging
 
 class ConfigParser:
@@ -25,8 +28,11 @@ class ConfigParser:
         # Formatter defines how each line will look in the config file
         formatter = logging.Formatter(self.getstr("logging.format") or "%(levelname)s:%(name)s:%(message)s", datefmt=self.getstr("logging.datefmt") or "%H:%M:%S")
         
+        if not exists("logs"):
+            mkdir("logs")
+
         # Handler defines which file to write to and how to write to it
-        handler = logging.FileHandler(self.getstr("logging.destination") or "logs/runtime.log", mode="a")
+        handler = logging.FileHandler("logs/" + (self.getstr("logging.destination") or "runtime.log"), mode="a")
         handler.setFormatter(formatter)
         
         # Get logging level from config file if valid, else use value 0 (all messages)

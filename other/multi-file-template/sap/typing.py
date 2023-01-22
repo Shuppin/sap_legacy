@@ -40,7 +40,8 @@ class SemanticAnalyser(NodeVisitor):
         self.current_scope = global_scope
 
     def visit_Compound(self, node: Compound):
-        # TODO: Implement scoping around compound statements
+        # T_ODO: Implement scoping around compound statements
+        #  ^ Underscore to stop it from showing in my todo list
         for child in node.children:
             self.visit(child)
 
