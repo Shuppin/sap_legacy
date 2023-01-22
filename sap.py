@@ -22,7 +22,7 @@ from modules.builtin_types  import *
 #   Attempted, will increase complexity with current solution, so maybe a future iteration
 #   - Mapping for binop in unop defining what datatypes are returned
 
-__version__ = "0.0.1-pre.33"
+__version__ = "0.0.1-pre.34"
 
 config_path = "config.toml"
 config = ConfigParser(config_path, override_logfile=True)
@@ -2280,7 +2280,7 @@ if config.getbool("behaviour.logging_enabled"):
     logging.addLevelName(LogLevel.EAT_STACK, "EATSTACK")
     logging.addLevelName(LogLevel.ALL, "ALL")
     logging.basicConfig(
-        filename=config.getstr("logging.destination"),
+        filename="logs/" + config.getstr("logging.destination"),
         filemode='a',
         format=config.getstr("logging.format"),
         datefmt=config.getstr("logging.datefmt"),

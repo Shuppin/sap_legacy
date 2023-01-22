@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.0.1-pre.34] - 22-01-2023
+
+## Changes
+
+- Fixed issue with modules logging to the incorrect file
+
 ## [0.0.1-pre.33] - 22-01-2023
 
 ### Changes

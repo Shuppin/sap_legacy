@@ -28,7 +28,7 @@ config = ConfigParser()
 formatter = Formatter(config.getstr("logging.format"), datefmt=config.getstr("logging.datefmt"))
 
 # Handler defines which file to write to and how to write to it
-handler = FileHandler(config.getstr("logging.destination"), mode="a")
+handler = FileHandler("logs/" + config.getstr("logging.destination"), mode="a")
 handler.setFormatter(formatter)
 
 # Get logging level from config file

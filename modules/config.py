@@ -48,7 +48,7 @@ class ConfigParser:
         # to start logging, it is responsible for clearing the
         # old log file
         if override_logfile:
-            logfile_path = self.getstr("logging.destination")
+            logfile_path = "logs/" + self.getstr("logging.destination")
             if logfile_path is not None:
                 open(logfile_path, "w").close()
                 self._logger.log(self.getint("logging.levels.INFO"), "Successfully cleared log file")
