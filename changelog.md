@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.0.1-pre.31] - 22-01-2023
+
+### Removed
+
+- `e.py` test file
+
 ## [0.0.1-pre.30] - 22-01-2023
 
 ### Changes
