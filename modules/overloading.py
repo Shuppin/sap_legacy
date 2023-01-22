@@ -11,7 +11,10 @@ from logging import Formatter
 from logging import FileHandler
 from logging import getLogger
 
-from config import ConfigParser
+if __name__ == '__main__':
+    from config import ConfigParser
+else:
+    from modules.config import ConfigParser
 # Might upload as a separate repo on github at some
 # point since it's a pretty neat little module
 

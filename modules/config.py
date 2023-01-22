@@ -45,17 +45,17 @@ class ConfigParser:
             logfile_path = self.getstr("logging.destination")
             if logfile_path is not None:
                 open(logfile_path, "w").close()
-                self._logger.info("Successfully cleared log file")
+                self._logger.log(self.getint("logging.levels.INFO"), "Successfully cleared log file")
             else:
-                self._logger.warning("Could not clear logfile, continuing anyway")
+                self._logger.log(self.getint("logging.levels.WARNING"), "Could not clear logfile, continuing anyway")
         
-        self._logger.info(f"{type(self).__name__}: Successfully read from file {repr(filename)}")
+        self._logger.log(self.getint("logging.levels.INFO"), f"{type(self).__name__}: Successfully read from file {repr(filename)}")
         
         self._verify_structure()
 
-        self._logger.info(f"{type(self).__name__}: Verified config structure")
+        self._logger.log(self.getint("logging.levels.INFO"), f"{type(self).__name__}: Verified config structure")
         
-        self._logger.info(f"{type(self).__name__}: Successfully parsed config")
+        self._logger.log(self.getint("logging.levels.INFO"), f"{type(self).__name__}: Successfully parsed config")
         
     def _error(self, message=None):
         # Set default error message
@@ -67,7 +67,9 @@ class ConfigParser:
         if hasattr(self, "data"):
             # The 'or' statements ensure a valid value is assigned,
             # even if the get functions return None
-            should_raise_error = self.getbool("dev.raise_error_stack") or False
+            should_raise_error = self.getbool("dev.raise_error_stack")
+            if should_raise_error is None:
+                should_raise_error = False
             log_level = self.getint("logging.levels.INFO") or 0
         else:
             should_raise_error = False
@@ -132,7 +134,7 @@ class ConfigParser:
         elif isinstance(path, list):
             split_path = path
         else:
-            self._logger.warning(f"(ConfigParser) get(): got unexpected type {repr(type(path))} for 'path' ")
+            self._logger.log(self.getint("logging.levels.WARNING"), f"(ConfigParser) get(): got unexpected type {repr(type(path))} for 'path' ")
             return None
         
         # If the path consists of only a single word, then we have reached the end

@@ -12,21 +12,18 @@ from sys            import stdout
 from typing         import Any
 from time           import time as current_time
 
-from config         import ConfigParser
+from modules.config         import ConfigParser
 
-from arithmetic     import *
-from builtin_types  import *
+from modules.arithmetic     import *
+from modules.builtin_types  import *
 
 # TODO:
-# * Move modules into package (need to figure how that works first)
-# * Fully implement static typing (~50%)
-# * Add function to interpreter to find first token in node object
-# * Update error printer to allow for a list of tokens
-# * Add changelog and actually use it
 # * Move type checker to semantic analyser?
+#   Attempted, will increase complexity with current solution, so maybe a future iteration
 #   - Mapping for binop in unop defining what datatypes are returned
 # * Verify log & config file paths
 
+__version__ = "0.0.1-pre.28"
 
 config_path = "config.toml"
 config = ConfigParser(config_path, override_logfile=True)
@@ -495,8 +492,10 @@ class BaseSymbol:
     Symbol base class
     """
     def __init__(self, name, datatype=None):
+        if datatype is None:
+            datatype = NoneType
         self.name: str = name
-        self.type: BuiltinSymbol | None = datatype
+        self.type: Type = datatype
         self.scope_level = 0
 
     def __str__(self) -> str:
@@ -727,6 +726,27 @@ class CallStack:
 
     def peek(self) -> ActivationRecord:
         return self._records[-1]
+
+    def get(self, variable_id: str, search_up_stack: bool = True):
+        pop_stack = []
+        while len(self._records) > 0:
+            current_ar = self.pop()
+            pop_stack.append(current_ar)
+            value = current_ar.get(variable_id)
+            if value is not None:
+                while len(pop_stack) > 0:
+                    self._records.append(pop_stack.pop())
+                return value
+
+            if not search_up_stack:
+                self._records.append(pop_stack.pop())
+                return None
+            
+        while len(pop_stack) > 0:
+            self._records.append(pop_stack.pop())
+
+        return None
+
 
 
 ###########################################
@@ -2072,8 +2092,7 @@ class Interpreter(NodeVisitor):
 
     def visit_Var(self, node: Var):
         variable_id = node.id
-        current_ar = self.call_stack.peek()
-        variable = current_ar.get(variable_id)
+        variable = self.call_stack.get(variable_id)
         if variable is None:
             self.error(
                 error_code=ErrorCode.NAME_ERROR,

@@ -1,5 +1,2 @@
-def test_func(int a) {
-    int b := 4 + a;
-};
-
-test_func(7.2);
+float d := 4;
+int x := 4 + d;

@@ -1,0 +1,229 @@
+21:29:46 [config.py:0048] INFO     - Successfully cleared log file
+21:29:46 [config.py:0048] INFO     - Successfully cleared log file
+21:29:46 [config.py:0052] INFO     - ConfigParser: Successfully read from file 'config.toml'
+21:29:46 [config.py:0052] INFO     - ConfigParser: Successfully read from file 'config.toml'
+21:29:46 [config.py:0056] INFO     - ConfigParser: Verified config structure
+21:29:46 [config.py:0056] INFO     - ConfigParser: Verified config structure
+21:29:46 [config.py:0058] INFO     - ConfigParser: Successfully parsed config
+21:29:46 [config.py:0058] INFO     - ConfigParser: Successfully parsed config
+21:29:46 [sap.py:2297] INFO     - Initialising
+21:29:46 [sap.py:2299] DEBUG    - Driver.__init__() complete
+21:29:46 [sap.py:2300] DEBUG    - Driver.run_program(): executing
+21:29:46 [sap.py:2143] DEBUG    - Driver._process_arguments(): Processing command line arguments
+21:29:46 [sap.py:2143] DEBUG    - Driver._process_arguments(): Driver.mode is now 'file'
+21:29:46 [sap.py:2300] DEBUG    - Driver.run_program(): Set global `current_filename` to 'examples/testing_typing.sap'
+21:29:46 [sap.py:2154] DEBUG    - Driver.file_input(): Executing program in file input mode
+21:29:46 [sap.py:2154] DEBUG    - Driver.file_input(): Successfully read file 'examples/testing_typing.sap'
+21:29:46 [sap.py:2154] DEBUG    - Driver.file_input(): Processing file
+21:29:46 [sap.py:2254] DEBUG    - Driver._process(): Initialising modules
+21:29:46 [sap.py:1155] DEBUG    - Lexer: created `RESERVED_KEYWORDS` table
+21:29:46 [sap.py:2193] DEBUG    - Lexer.__init__() complete
+21:29:46 [sap.py:2193] DEBUG    - Parser: pre-loading first token
+21:29:46 [sap.py:1024] ALL      - Token: created Token[type = TokenType.FLOAT, id = <class 'modules.builtin_types.Float'>, position = <1:5>]
+21:29:46 [sap.py:2193] DEBUG    - Parser: setting `self.previous_token` to empty token
+21:29:46 [sap.py:2193] ALL      - Token: created Token[type = None, id = None, position = <0:0>]
+21:29:46 [sap.py:2254] DEBUG    - Parser.__init__() complete
+21:29:46 [sap.py:2194] DEBUG    - NodeVisitor.__init__() complete
+21:29:46 [sap.py:2254] DEBUG    - SemanticAnalyser.__init__() complete
+21:29:46 [sap.py:2195] DEBUG    - NodeVisitor.__init__() complete
+21:29:46 [sap.py:2254] DEBUG    - Interpreter.__init__() complete
+21:29:46 [sap.py:2254] DEBUG    - Driver._process(): All modules initialised
+21:29:46 [sap.py:2254] DEBUG    - Driver._process(): Evoking parser
+21:29:46 [sap.py:2199] DEBUG    - Parser: parsing file 'examples/testing_typing.sap'
+21:29:46 [sap.py:1402] EATSTACK - Parser.eat(): (current type: TokenType.FLOAT, expected type: TokenType.FLOAT)
+21:29:46 [sap.py:1024] ALL      - Token: created Token[type = TokenType.IDENTIFIER, id = 'd', position = <1:7>]
+21:29:46 [sap.py:1402] ALL      - Parser: created TypeNode() <1:7> in type_spec()
+21:29:46 [sap.py:1404] EATSTACK - Parser.eat(): (current type: TokenType.IDENTIFIER, expected type: TokenType.IDENTIFIER)
+21:29:46 [sap.py:1182] ALL      - Token: created Token[type = TokenType.ASSIGN, id = ':=', position = <1:8>]
+21:29:46 [sap.py:1404] ALL      - Parser: created Var() <1:8> in variable()
+21:29:46 [sap.py:1297] EATSTACK - Parser.eat(): (current type: TokenType.ASSIGN, expected type: TokenType.ASSIGN)
+21:29:46 [sap.py:1027] ALL      - Token: created Token[type = TokenType.INTEGER_LITERAL, id = Int(4), position = <1:12>]
+21:29:46 [sap.py:1551] EATSTACK - Parser.eat(): (current type: TokenType.INTEGER_LITERAL, expected type: TokenType.INTEGER_LITERAL)
+21:29:46 [sap.py:1182] ALL      - Token: created Token[type = TokenType.SEMI, id = ';', position = <1:12>]
+21:29:46 [sap.py:1551] ALL      - Parser: created Num() <1:12> in factor()
+21:29:46 [sap.py:1530] ALL      - Parser: created Num() <1:12> in term()
+21:29:46 [sap.py:1410] ALL      - Parser: created Num() <1:12> in expr()
+21:29:46 [sap.py:1297] ALL      - Parser: created VarDecl() <1:12> in variable_declaration()
+21:29:46 [sap.py:1267] ALL      - Parser: created VarDecl() <1:12> in statement()
+21:29:46 [sap.py:1255] EATSTACK - Parser.eat(): (current type: TokenType.SEMI, expected type: TokenType.SEMI)
+21:29:46 [sap.py:1024] ALL      - Token: created Token[type = TokenType.INTEGER, id = <class 'modules.builtin_types.Int'>, position = <2:3>]
+21:29:46 [sap.py:1402] EATSTACK - Parser.eat(): (current type: TokenType.INTEGER, expected type: TokenType.INTEGER)
+21:29:46 [sap.py:1024] ALL      - Token: created Token[type = TokenType.IDENTIFIER, id = 'x', position = <2:5>]
+21:29:46 [sap.py:1402] ALL      - Parser: created TypeNode() <2:5> in type_spec()
+21:29:46 [sap.py:1404] EATSTACK - Parser.eat(): (current type: TokenType.IDENTIFIER, expected type: TokenType.IDENTIFIER)
+21:29:46 [sap.py:1182] ALL      - Token: created Token[type = TokenType.ASSIGN, id = ':=', position = <2:6>]
+21:29:46 [sap.py:1404] ALL      - Parser: created Var() <2:6> in variable()
+21:29:46 [sap.py:1297] EATSTACK - Parser.eat(): (current type: TokenType.ASSIGN, expected type: TokenType.ASSIGN)
+21:29:46 [sap.py:1027] ALL      - Token: created Token[type = TokenType.INTEGER_LITERAL, id = Int(4), position = <2:10>]
+21:29:46 [sap.py:1551] EATSTACK - Parser.eat(): (current type: TokenType.INTEGER_LITERAL, expected type: TokenType.INTEGER_LITERAL)
+21:29:46 [sap.py:1182] ALL      - Token: created Token[type = TokenType.PLUS, id = '+', position = <2:11>]
+21:29:46 [sap.py:1551] ALL      - Parser: created Num() <2:11> in factor()
+21:29:46 [sap.py:1530] ALL      - Parser: created Num() <2:11> in term()
+21:29:46 [sap.py:1410] EATSTACK - Parser.eat(): (current type: TokenType.PLUS, expected type: TokenType.PLUS)
+21:29:46 [sap.py:1024] ALL      - Token: created Token[type = TokenType.IDENTIFIER, id = 'd', position = <2:14>]
+21:29:46 [sap.py:1604] EATSTACK - Parser.eat(): (current type: TokenType.IDENTIFIER, expected type: TokenType.IDENTIFIER)
+21:29:46 [sap.py:1182] ALL      - Token: created Token[type = TokenType.SEMI, id = ';', position = <2:14>]
+21:29:46 [sap.py:1604] ALL      - Parser: created Var() <2:14> in variable()
+21:29:46 [sap.py:1551] ALL      - Parser: created Var() <2:14> in factor()
+21:29:46 [sap.py:1542] ALL      - Parser: created Var() <2:14> in term()
+21:29:46 [sap.py:1410] ALL      - Parser: created BinOp() <2:14> in expr()
+21:29:46 [sap.py:1297] ALL      - Parser: created VarDecl() <2:14> in variable_declaration()
+21:29:46 [sap.py:1275] ALL      - Parser: created VarDecl() <2:14> in statement()
+21:29:46 [sap.py:1255] EATSTACK - Parser.eat(): (current type: TokenType.SEMI, expected type: TokenType.SEMI)
+21:29:46 [sap.py:1182] ALL      - Token: created Token[type = TokenType.EOF, id = None, position = <2:15>]
+21:29:46 [sap.py:1305] ALL      - Parser: created NoOp() <2:15> in empty()
+21:29:46 [sap.py:1275] ALL      - Parser: created NoOp() <2:15> in statement()
+21:29:46 [sap.py:1255] ALL      - Parser: created list[Node](3) <2:15> in statement_list()
+21:29:46 [sap.py:1673] EATSTACK - Parser.eat(): (current type: TokenType.EOF, expected type: TokenType.EOF)
+21:29:46 [sap.py:1182] ALL      - Token: created Token[type = TokenType.EOF, id = None, position = <2:15>]
+21:29:46 [sap.py:1673] ALL      - Parser: created Program() <2:15> in program()
+21:29:46 [sap.py:2199] DEBUG    - Parser: finished parsing file 'examples/testing_typing.sap'
+21:29:46 [sap.py:2254] HVERBOSE - SYNTAX TREE ('examples/testing_typing.sap')
+21:29:46 [sap.py:2254] HVERBOSE -  |   Program(
+21:29:46 [sap.py:2254] HVERBOSE -  |      statements: [
+21:29:46 [sap.py:2254] HVERBOSE -  |         VarDecl(
+21:29:46 [sap.py:2254] HVERBOSE -  |            type_node: TypeNode(
+21:29:46 [sap.py:2254] HVERBOSE -  |               token: Token[type = TokenType.FLOAT, id = <class 'modules.builtin_types.Float'>, position = <1:5>],
+21:29:46 [sap.py:2254] HVERBOSE -  |               id: TokenType.FLOAT,
+21:29:46 [sap.py:2254] HVERBOSE -  |            ),
+21:29:46 [sap.py:2254] HVERBOSE -  |            var_node: Var(
+21:29:46 [sap.py:2254] HVERBOSE -  |               token: Token[type = TokenType.IDENTIFIER, id = 'd', position = <1:7>],
+21:29:46 [sap.py:2254] HVERBOSE -  |               id: d,
+21:29:46 [sap.py:2254] HVERBOSE -  |            ),
+21:29:46 [sap.py:2254] HVERBOSE -  |            assign_op: Token[type = TokenType.ASSIGN, id = ':=', position = <1:8>],
+21:29:46 [sap.py:2254] HVERBOSE -  |            expr_node: Num(
+21:29:46 [sap.py:2254] HVERBOSE -  |               token: Token[type = TokenType.INTEGER_LITERAL, id = Int(4), position = <1:12>],
+21:29:46 [sap.py:2254] HVERBOSE -  |               id: Int(4),
+21:29:46 [sap.py:2254] HVERBOSE -  |            ),
+21:29:46 [sap.py:2254] HVERBOSE -  |         ),
+21:29:46 [sap.py:2254] HVERBOSE -  |         VarDecl(
+21:29:46 [sap.py:2254] HVERBOSE -  |            type_node: TypeNode(
+21:29:46 [sap.py:2254] HVERBOSE -  |               token: Token[type = TokenType.INTEGER, id = <class 'modules.builtin_types.Int'>, position = <2:3>],
+21:29:46 [sap.py:2254] HVERBOSE -  |               id: TokenType.INTEGER,
+21:29:46 [sap.py:2254] HVERBOSE -  |            ),
+21:29:46 [sap.py:2254] HVERBOSE -  |            var_node: Var(
+21:29:46 [sap.py:2254] HVERBOSE -  |               token: Token[type = TokenType.IDENTIFIER, id = 'x', position = <2:5>],
+21:29:46 [sap.py:2254] HVERBOSE -  |               id: x,
+21:29:46 [sap.py:2254] HVERBOSE -  |            ),
+21:29:46 [sap.py:2254] HVERBOSE -  |            assign_op: Token[type = TokenType.ASSIGN, id = ':=', position = <2:6>],
+21:29:46 [sap.py:2254] HVERBOSE -  |            expr_node: BinOp(
+21:29:46 [sap.py:2254] HVERBOSE -  |               left: Num(
+21:29:46 [sap.py:2254] HVERBOSE -  |                  token: Token[type = TokenType.INTEGER_LITERAL, id = Int(4), position = <2:10>],
+21:29:46 [sap.py:2254] HVERBOSE -  |                  id: Int(4),
+21:29:46 [sap.py:2254] HVERBOSE -  |               ),
+21:29:46 [sap.py:2254] HVERBOSE -  |               op: Token[type = TokenType.PLUS, id = '+', position = <2:11>],
+21:29:46 [sap.py:2254] HVERBOSE -  |               right: Var(
+21:29:46 [sap.py:2254] HVERBOSE -  |                  token: Token[type = TokenType.IDENTIFIER, id = 'd', position = <2:14>],
+21:29:46 [sap.py:2254] HVERBOSE -  |                  id: d,
+21:29:46 [sap.py:2254] HVERBOSE -  |               ),
+21:29:46 [sap.py:2254] HVERBOSE -  |            ),
+21:29:46 [sap.py:2254] HVERBOSE -  |         ),
+21:29:46 [sap.py:2254] HVERBOSE -  |         NoOp(
+21:29:46 [sap.py:2254] HVERBOSE -  |         ),
+21:29:46 [sap.py:2254] HVERBOSE -  |      ],
+21:29:46 [sap.py:2254] HVERBOSE -  |   )
+21:29:46 [sap.py:2254] HVERBOSE - SYNTAX TREE END
+21:29:46 [sap.py:2254] DEBUG    - Driver._process(): Evoking semantic analyser
+21:29:46 [sap.py:2206] DEBUG    - SemanticAnalyser: Performing analysis and creating symbol tables
+21:29:46 [sap.py:2206] ALL      - SemanticAnalyser: visiting Program
+21:29:46 [sap.py:0790] VERBOSE  - SemanticAnalyser: creating '<builtins>' symbol table
+21:29:46 [sap.py:0573] HVERBOSE - SymbolTable '<builtins>': define "<builtin> <class 'modules.builtin_types.Int'>" into scope '<builtins>'
+21:29:46 [sap.py:0574] HVERBOSE - SymbolTable '<builtins>': define "<builtin> <class 'modules.builtin_types.Float'>" into scope '<builtins>'
+21:29:46 [sap.py:1714] VERBOSE  - SymbolTable: Defined built-in symbols for '<builtins>'
+21:29:46 [sap.py:0790] VERBOSE  - SemanticAnalyser: creating '<global>' symbol table
+21:29:46 [sap.py:0790] HVERBOSE - SemanticAnalyser: SCOPE '<builtins>'
+21:29:46 [sap.py:0790] HVERBOSE -  |   
+21:29:46 [sap.py:0790] HVERBOSE -  |   SCOPE (SCOPED SYMBOL TABLE):
+21:29:46 [sap.py:0790] HVERBOSE -  |   ==================================================
+21:29:46 [sap.py:0790] HVERBOSE -  |   Scope name    : <builtins>
+21:29:46 [sap.py:0790] HVERBOSE -  |   Scope level   : 0
+21:29:46 [sap.py:0790] HVERBOSE -  |   Parent scope  : <none>
+21:29:46 [sap.py:0790] HVERBOSE -  |   
+21:29:46 [sap.py:0790] HVERBOSE -  |   Scope symbol table contents
+21:29:46 [sap.py:0790] HVERBOSE -  |   ---------------------------
+21:29:46 [sap.py:0790] HVERBOSE -  |   
+21:29:46 [sap.py:0790] HVERBOSE -  |     <builtin> <class 'modules.builtin_types.Float'>
+21:29:46 [sap.py:0790] HVERBOSE -  |     <builtin> <class 'modules.builtin_types.Int'>
+21:29:46 [sap.py:0790] HVERBOSE -  |   
+21:29:46 [sap.py:0790] HVERBOSE -  |   ==================================================
+21:29:46 [sap.py:0790] HVERBOSE -  |   
+21:29:46 [sap.py:0790] HVERBOSE - SemanticAnalyser: SCOPE '<builtins>' END
+21:29:46 [sap.py:0790] ALL      - SemanticAnalyser: visiting VarDecl
+21:29:46 [sap.py:0790] ALL      - SemanticAnalyser: visiting TypeNode <1:5>
+21:29:46 [sap.py:0658] HVERBOSE - SymbolTable '<builtins>': lookup <class 'modules.builtin_types.Float'> returned "<builtin> <class 'modules.builtin_types.Float'>" in scope '<builtins>'
+21:29:46 [sap.py:1745] HVERBOSE - SymbolTable '<global>': lookup 'd' returned None in scope '<global>'
+21:29:46 [sap.py:1753] HVERBOSE - SymbolTable '<global>': define "<variable> (id: 'd', type: <class 'modules.builtin_types.Float'>)" into scope '<global>'
+21:29:46 [sap.py:0790] ALL      - SemanticAnalyser: visiting Num <1:12>
+21:29:46 [sap.py:0790] ALL      - SemanticAnalyser: visiting VarDecl
+21:29:46 [sap.py:0790] ALL      - SemanticAnalyser: visiting TypeNode <2:3>
+21:29:46 [sap.py:0658] HVERBOSE - SymbolTable '<builtins>': lookup <class 'modules.builtin_types.Int'> returned "<builtin> <class 'modules.builtin_types.Int'>" in scope '<builtins>'
+21:29:46 [sap.py:1745] HVERBOSE - SymbolTable '<global>': lookup 'x' returned None in scope '<global>'
+21:29:46 [sap.py:1753] HVERBOSE - SymbolTable '<global>': define "<variable> (id: 'x', type: <class 'modules.builtin_types.Int'>)" into scope '<global>'
+21:29:46 [sap.py:0790] ALL      - SemanticAnalyser: visiting BinOp
+21:29:46 [sap.py:0790] ALL      - SemanticAnalyser: visiting Num <2:10>
+21:29:46 [sap.py:0790] ALL      - SemanticAnalyser: visiting Var <2:14>
+21:29:46 [sap.py:1841] HVERBOSE - SymbolTable '<global>': lookup 'd' returned "<variable> (id: 'd', type: <class 'modules.builtin_types.Float'>)" in scope '<global>'
+21:29:46 [sap.py:0790] ALL      - SemanticAnalyser: visiting NoOp
+21:29:46 [sap.py:0790] HVERBOSE - SemanticAnalyser: SCOPE '<global>'
+21:29:46 [sap.py:0790] HVERBOSE -  |   
+21:29:46 [sap.py:0790] HVERBOSE -  |   SCOPE (SCOPED SYMBOL TABLE):
+21:29:46 [sap.py:0790] HVERBOSE -  |   ====================================================================
+21:29:46 [sap.py:0790] HVERBOSE -  |   Scope name    : <global>
+21:29:46 [sap.py:0790] HVERBOSE -  |   Scope level   : 1
+21:29:46 [sap.py:0790] HVERBOSE -  |   Parent scope  : <builtins>
+21:29:46 [sap.py:0790] HVERBOSE -  |   
+21:29:46 [sap.py:0790] HVERBOSE -  |   Scope symbol table contents
+21:29:46 [sap.py:0790] HVERBOSE -  |   ---------------------------
+21:29:46 [sap.py:0790] HVERBOSE -  |   
+21:29:46 [sap.py:0790] HVERBOSE -  |     <variable> (id: 'd', type: <class 'modules.builtin_types.Float'>)
+21:29:46 [sap.py:0790] HVERBOSE -  |     <variable> (id: 'x', type: <class 'modules.builtin_types.Int'>)
+21:29:46 [sap.py:0790] HVERBOSE -  |   
+21:29:46 [sap.py:0790] HVERBOSE -  |   ====================================================================
+21:29:46 [sap.py:0790] HVERBOSE -  |   
+21:29:46 [sap.py:0790] HVERBOSE - SemanticAnalyser: SCOPE '<global>' END
+21:29:46 [sap.py:2206] DEBUG    - SemanticAnalyser: Analysis complete!
+21:29:46 [sap.py:2254] DEBUG    - Driver._process(): Evoking interpreter
+21:29:46 [sap.py:2208] ALL      - Interpreter: visiting Program
+21:29:46 [sap.py:0790] DEBUG    - Interpreter: Interpreting tree <__main__.Program object at 0x0000021324C51610>
+21:29:46 [sap.py:0790] VERBOSE  - Interpreter: created AR '<program>' <__main__.ActivationRecord object at 0x0000021324C7A610>
+21:29:46 [sap.py:0790] VERBOSE  - Interpreter: pushed AR '<program>' onto call stack
+21:29:46 [sap.py:0790] ALL      - Interpreter: visiting VarDecl
+21:29:46 [sap.py:0790] ALL      - Interpreter: visiting Num <1:12>
+21:29:46 [sap.py:0790] HVERBOSE - Interpreter: VarDecl <Float> 'd' = Float(4.0)
+21:29:46 [sap.py:0790] ALL      - Interpreter: visiting VarDecl
+21:29:46 [sap.py:0790] ALL      - Interpreter: visiting BinOp
+21:29:46 [sap.py:0790] ALL      - Interpreter: visiting Num <2:10>
+21:29:46 [sap.py:0790] ALL      - Interpreter: visiting Var <2:14>
+21:29:46 [overloading.py:0128] ALL      - create_overload._rearrange_objects(): The compatible types for <class 'modules.builtin_types.Int'> are [Int(4)]
+21:29:46 [overloading.py:0128] ALL      - create_overload._rearrange_objects(): The compatible types for <class 'modules.builtin_types.Int'> are [Int(4)]
+21:29:46 [overloading.py:0122] ALL      - create_overload._rearrange_objects(): Could not find an object which is compatible with <class 'modules.builtin_types.Int'>
+21:29:46 [overloading.py:0122] ALL      - create_overload._rearrange_objects(): Could not find an object which is compatible with <class 'modules.builtin_types.Int'>
+21:29:46 [overloading.py:0128] ALL      - create_overload._rearrange_objects(): The compatible types for <class 'modules.builtin_types.Int'> are [Int(4)]
+21:29:46 [overloading.py:0128] ALL      - create_overload._rearrange_objects(): The compatible types for <class 'modules.builtin_types.Int'> are [Int(4)]
+21:29:46 [overloading.py:0128] ALL      - create_overload._rearrange_objects(): The compatible types for <class 'modules.builtin_types.Float'> are [Float(4.0)]
+21:29:46 [overloading.py:0128] ALL      - create_overload._rearrange_objects(): The compatible types for <class 'modules.builtin_types.Float'> are [Float(4.0)]
+21:29:46 [sap.py:0790] HVERBOSE - Interpreter: VarDecl <Int> 'x' = Int(8)
+21:29:46 [sap.py:0790] ALL      - Interpreter: visiting NoOp
+21:29:46 [sap.py:0790] HVERBOSE - Interpreter: ACTIVATION RECORD '<program>'
+21:29:46 [sap.py:0790] HVERBOSE -  |   
+21:29:46 [sap.py:0790] HVERBOSE -  |   ACTIVATION RECORD:
+21:29:46 [sap.py:0790] HVERBOSE -  |   ===========================
+21:29:46 [sap.py:0790] HVERBOSE -  |   Scope name    : <program>
+21:29:46 [sap.py:0790] HVERBOSE -  |   AR type       : PROGRAM
+21:29:46 [sap.py:0790] HVERBOSE -  |   Nesting level : 1
+21:29:46 [sap.py:0790] HVERBOSE -  |   
+21:29:46 [sap.py:0790] HVERBOSE -  |   Activation record contents
+21:29:46 [sap.py:0790] HVERBOSE -  |   --------------------------
+21:29:46 [sap.py:0790] HVERBOSE -  |   
+21:29:46 [sap.py:0790] HVERBOSE -  |       <Float> d = Float(4.0)
+21:29:46 [sap.py:0790] HVERBOSE -  |   
+21:29:46 [sap.py:0790] HVERBOSE -  |       <Int> x = Int(8)
+21:29:46 [sap.py:0790] HVERBOSE -  |   
+21:29:46 [sap.py:0790] HVERBOSE -  |   ===========================
+21:29:46 [sap.py:0790] HVERBOSE -  |   
+21:29:46 [sap.py:0790] HVERBOSE - Interpreter: ACTIVATION RECORD '<program>' END
+21:29:46 [sap.py:0790] VERBOSE  - Interpreter: lifted AR '<program>' from call stack
+21:29:46 [sap.py:0790] DEBUG    - Interpreter: Finished interpreting tree
+21:29:46 [sap.py:2254] DEBUG    - Driver._process(): Processing complete!
+21:29:46 [sap.py:2300] INFO     - Driver.run_program(): Program terminating with a success state
+21:29:46 [sap.py:2303] INFO     - Execution finished in 0.01909s

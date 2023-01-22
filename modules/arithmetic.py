@@ -10,11 +10,17 @@ and performs native python arithmetic on them
 # from logging import getLogger
 from math import floor
 
-# Not used
-# from config         import ConfigParser
-from overloading    import create_overload
+if __name__ == '__main__':
+    # Not used
+    # from config         import ConfigParser
+    from overloading    import create_overload
 
-from builtin_types  import *
+    from builtin_types  import *
+else:
+    # Not used
+    # from modules.config       import ConfigParser
+    from modules.overloading    import create_overload
+    from modules.builtin_types  import *
 
 __all__ = [
     "add",
@@ -102,8 +108,7 @@ def truediv() -> Type: ...
 
 @truediv.overload()
 def truediv(int1: Int, int2: Int):
-    result = int(int1.literal_value)/int(int2.literal_value)
-    return Float(str(result))
+    return Float(str(int(int1.literal_value)/int(int2.literal_value)))
 
 @truediv.overload()
 def truediv(int1: Int, float1: Float):
