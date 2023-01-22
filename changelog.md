@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.0.1-pre.33] - 22-01-2023
+
+### Changes
+
+- Fixed typo in `.gitignore` (which is why it wasn't working)
+
 ## [0.0.1-pre.32] - 22-01-2023
 
 ### Added
