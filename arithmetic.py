@@ -4,12 +4,14 @@ Module which is responsible for all arithmetic operations.
 Essentially it converts SAP types into native Python types
 and performs native python arithmetic on them
 """
-from logging import Formatter
-from logging import FileHandler
-from logging import getLogger
+# Not used
+# from logging import Formatter
+# from logging import FileHandler
+# from logging import getLogger
 from math import floor
 
-from config         import ConfigParser
+# Not used
+# from config         import ConfigParser
 from overloading    import create_overload
 
 from builtin_types  import *
@@ -23,22 +25,29 @@ __all__ = [
     "negate"
 ]
 
-# TODO: Document this snippet
-
+# Currently unused
+"""
+# Load config information
 config = ConfigParser()
 
+# Create formatter object using value(s) from config file
+# Formatter defines how each line will look in the config file
 formatter = Formatter(config.getstr("logging.format"), datefmt=config.getstr("logging.datefmt"))
-        
+
+# Handler defines which file to write to and how to write to it
 handler = FileHandler(config.getstr("logging.destination"), mode="a")
 handler.setFormatter(formatter)
 
+# Get logging level from config file
 log_level = config.getint(f"logging.levels.{config.getstr('logging.level')}")
 
+# Create and setup logging object
 logger = getLogger("arithmetic")
 logger.setLevel(log_level)
 logger.addHandler(handler)
 
 LOG_ALL = config.getint("logging.levels.ALL")
+"""
 
 @create_overload
 def add() -> Type: ...

@@ -8,6 +8,7 @@ from inspect        import currentframe
 from inspect        import getframeinfo
 from os.path        import isfile
 from sys            import argv
+from sys            import stdout
 from typing         import Any
 from time           import time as current_time
 
@@ -22,6 +23,9 @@ from builtin_types  import *
 # * Add function to interpreter to find first token in node object
 # * Update error printer to allow for a list of tokens
 # * Add changelog and actually use it
+# * Move type checker to semantic analyser?
+#   - Mapping for binop in unop defining what datatypes are returned
+# * Verify log & config file paths
 
 
 config_path = "config.toml"
@@ -80,7 +84,6 @@ class ErrorCode(Enum):
     TYPE_ERROR      = "TypeError"
 
 
-# Temporarily in place of config file
 class LogLevel:
     CRITICAL        = config.getint("logging.levels.CRITICAL")
     INFO            = config.getint("logging.levels.INFO")
@@ -152,7 +155,7 @@ class BaseError(Exception):
             surrounding_lines: list[str] = None
     ):
         self.error_code: ErrorCode = error_code
-        self.message: str = f'({self.__class__.__name__[:-5]}) {self.error_code.value}: {message}'
+        self.message: str = f'{self.__class__.__name__[:-5]} :: {self.error_code.value}: {message}'
         self.token: Token | None = token
         self.surrounding_lines: list[str] | None = surrounding_lines
         # We need the position at which the error occurred,
@@ -184,6 +187,14 @@ class BaseError(Exception):
         (Parser) SyntaxError: Expected type <IDENTIFIER> but got type <EOF>
         ```
         """
+
+        # Checks if current output has utf encoding,
+        # allowing for this special vertical bar character to be used
+        if stdout.encoding.lower().startswith("utf"):
+            VERT_BAR = "│"
+        else:
+            VERT_BAR = "|"
+
         # Creates the message with the '~~~' highlighter
         # For example:
         # | 1 | inte x := 4;
@@ -192,10 +203,10 @@ class BaseError(Exception):
             error_message = [
                 (f'File "{current_filename}", position <{self.lineno}:{self.linecol}>\n'),
                 # The if clauses here will ensure it prints the surrounding lines only if it exists
-                (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno-3)))}{self.lineno-3} │ {self.surrounding_lines[self.lineno-4]}\n" if (self.lineno-4) >= 0 else f""),
-                (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno-2)))}{self.lineno-2} │ {self.surrounding_lines[self.lineno-3]}\n" if (self.lineno-3) >= 0 else f""),
-                (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno-1)))}{self.lineno-1} │ {self.surrounding_lines[self.lineno-2]}\n" if (self.lineno-2) >= 0 else f""),
-                (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno  )))}{self.lineno  } │ {self.surrounding_lines[self.lineno-1]}\n"),
+                (f" {VERT_BAR} {' '*(len(str(self.lineno+2)) - len(str(self.lineno-3)))}{self.lineno-3} {VERT_BAR} {self.surrounding_lines[self.lineno-4]}\n" if (self.lineno-4) >= 0 else f""),
+                (f" {VERT_BAR} {' '*(len(str(self.lineno+2)) - len(str(self.lineno-2)))}{self.lineno-2} {VERT_BAR} {self.surrounding_lines[self.lineno-3]}\n" if (self.lineno-3) >= 0 else f""),
+                (f" {VERT_BAR} {' '*(len(str(self.lineno+2)) - len(str(self.lineno-1)))}{self.lineno-1} {VERT_BAR} {self.surrounding_lines[self.lineno-2]}\n" if (self.lineno-2) >= 0 else f""),
+                (f" {VERT_BAR} {' '*(len(str(self.lineno+2)) - len(str(self.lineno  )))}{self.lineno  } {VERT_BAR} {self.surrounding_lines[self.lineno-1]}\n"),
                 (f"   {' '*len(str(self.lineno+2))}  {' ' * self.token.startcol} {'~' * (self.linecol - self.token.startcol)}\n"),
                 (self.message)
                 ]
@@ -209,10 +220,10 @@ class BaseError(Exception):
             error_message = [
                 (f'File "{current_filename}", position <{self.lineno}:{self.linecol}>\n'),
                 # The if clauses here will ensure it prints the surrounding lines only if it exists
-                (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno-3)))}{self.lineno-3} │ {self.surrounding_lines[self.lineno-4]}\n" if (self.lineno-4) >= 0 else f""),
-                (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno-2)))}{self.lineno-2} │ {self.surrounding_lines[self.lineno-3]}\n" if (self.lineno-3) >= 0 else f""),
-                (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno-1)))}{self.lineno-1} │ {self.surrounding_lines[self.lineno-2]}\n" if (self.lineno-2) >= 0 else f""),
-                (f" │ {' '*(len(str(self.lineno+2)) - len(str(self.lineno  )))}{self.lineno  } │ {self.surrounding_lines[self.lineno-1]}\n"),
+                (f" {VERT_BAR} {' '*(len(str(self.lineno+2)) - len(str(self.lineno-3)))}{self.lineno-3} {VERT_BAR} {self.surrounding_lines[self.lineno-4]}\n" if (self.lineno-4) >= 0 else f""),
+                (f" {VERT_BAR} {' '*(len(str(self.lineno+2)) - len(str(self.lineno-2)))}{self.lineno-2} {VERT_BAR} {self.surrounding_lines[self.lineno-3]}\n" if (self.lineno-3) >= 0 else f""),
+                (f" {VERT_BAR} {' '*(len(str(self.lineno+2)) - len(str(self.lineno-1)))}{self.lineno-1} {VERT_BAR} {self.surrounding_lines[self.lineno-2]}\n" if (self.lineno-2) >= 0 else f""),
+                (f" {VERT_BAR} {' '*(len(str(self.lineno+2)) - len(str(self.lineno  )))}{self.lineno  } {VERT_BAR} {self.surrounding_lines[self.lineno-1]}\n"),
                 (f"   {' '*len(str(self.lineno+2))}  {' '*self.linecol} ^\n"),
                 (self.message)
                 ]
@@ -576,7 +587,15 @@ class SymbolTable:
         symbols = defaultdict(list)
         
         # This is awful i know, TODO: Make this look neater
-        stringified_keys = list(map(lambda key_value_tuple: (getattr(key_value_tuple[0], "__name__", str(key_value_tuple[0])), key_value_tuple[1]), self._symbols.items()))
+        stringified_keys = list(
+            map(
+                lambda key_value_tuple: (
+                    getattr(key_value_tuple[0], "__name__", str(key_value_tuple[0])),  # Try to use __name__ attribute if present, else use str()
+                    key_value_tuple[1]  # Leave the value as it is
+                ),
+                self._symbols.items()
+            )
+        )
         
         for _, val in sorted(stringified_keys):
             symbols[val.__class__.__name__].append(val)
@@ -1832,9 +1851,6 @@ class Interpreter(NodeVisitor):
 
     It also handles type-checking at runtime
     """
-    
-    # TODO: Replace raise statements with self.error()
-    
     def __init__(self, src: str):
         super().__init__()
         self.call_stack = CallStack()
@@ -2025,6 +2041,7 @@ class Interpreter(NodeVisitor):
         left_value = self.visit(node.left)
         right_value = self.visit(node.right)
         
+        # Enum value : function
         mapping = {
             TokenType.PLUS: add,
             TokenType.SUB: sub,
@@ -2058,9 +2075,18 @@ class Interpreter(NodeVisitor):
         current_ar = self.call_stack.peek()
         variable = current_ar.get(variable_id)
         if variable is None:
-            raise NameError(f"Interpreter :: could not find {repr(variable_id)} in current frame")
+            self.error(
+                error_code=ErrorCode.NAME_ERROR,
+                token=node.token,
+                message=f"Could not find {repr(variable_id)} in current frame"
+            )
         elif variable.value is None:
-            raise NameError(f"Interpreter :: {repr(variable_id)} has no value!")
+            # Not sure if this code is even reachable
+            self.error(
+                error_code=ErrorCode.NAME_ERROR,
+                token=node.token,
+                message=f"Variable {repr(variable_id)} has no value!"
+            )
         else:
             return variable.value
 

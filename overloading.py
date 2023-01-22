@@ -12,32 +12,47 @@ from logging import FileHandler
 from logging import getLogger
 
 from config import ConfigParser
+# Might upload as a separate repo on github at some
+# point since it's a pretty neat little module
 
-# TODO: Document this little snippet
-
+# Load config information
 config = ConfigParser()
 
+# Setup logging
+
+# Create formatter object using value(s) from config file
+# Formatter defines how each line will look in the config file
 formatter = Formatter(config.getstr("logging.format"), datefmt=config.getstr("logging.datefmt"))
-        
+
+# Handler defines which file to write to and how to write to it
 handler = FileHandler(config.getstr("logging.destination"), mode="a")
 handler.setFormatter(formatter)
 
+# Get logging level from config file
 log_level = config.getint(f"logging.levels.{config.getstr('logging.level')}")
 
+# Create and setup logging object
 logger = getLogger("overloading")
 logger.setLevel(log_level)
 logger.addHandler(handler)
 
+# Store the value of the logging.levels.ALL level
 LOG_ALL = config.getint("logging.levels.ALL")
-
-# Yes I know the copious  amounts of printing is horrible, i'll fix it later
-
-# Might upload as a separate repo on github at some
-# point since it's a pretty neat little module
 
 class create_overload:
     """
     Converts the wrapped function into an overload-able object
+
+    Example syntax:
+    ```
+    @create_overload
+    def add():
+        pass
+
+    @add.overload()
+    def add(num1: int, num2: int):
+        ...
+    ```
     """
     def __init__(self, _):
         self.cases: dict[tuple] = {}
@@ -115,6 +130,18 @@ class create_overload:
         return tuple(rearranged_objects)
 
     def overload(self):
+        """
+        Example syntax:
+        ```
+        @create_overload
+        def add():
+            pass
+
+        @add.overload()
+        def add(num1: int, num2: int):
+            ...
+        ```
+        """
         def store_function(function):
             # getfullargspec retrieves various information about a function
             # We only care about the type annotations on the arguments
