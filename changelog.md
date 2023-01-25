@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.0.1-pre.36] - 22-01-2023
+
+### Added
+
+- Boolean logic operations
+
+### Changes
+
+- Minor bug fixes & code clean up
+
+
 ## [0.0.1-pre.35] - 22-01-2023
 
 ### Added

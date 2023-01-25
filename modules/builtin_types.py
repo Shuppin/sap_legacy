@@ -53,6 +53,9 @@ class Int(Type):
 
     def toFloat(self):
         return Float(f"{self.literal_value}.0")
+    
+    def toBool(self):
+        return Bool(int(self.literal_value))
 
 
 class Float(Type):
@@ -67,4 +70,13 @@ class Float(Type):
                 break
             truncated += char
         return Int(truncated)
+    
+    def toBool(self):
+        truncated = ""
+        # Add all numbers before decimal
+        for char in self.literal_value:
+            if char == ".":
+                break
+            truncated += char
+        return Bool(int(truncated))
     

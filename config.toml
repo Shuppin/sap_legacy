@@ -26,7 +26,7 @@ ALL             = 5
 [dev]
 # If no file was specified in the arguments, use this instead
 # Overrides default cmdline behaviour
-default_filename  = "examples/testing_typing.sap"
+default_filename  = "examples/bool_test.sap"
 # This defines how errors are treated
 # If true, it will raise an error with the full stack trace,
 # useful for debugging purposes

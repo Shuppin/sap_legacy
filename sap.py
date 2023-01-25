@@ -16,8 +16,10 @@ from modules.config         import ConfigParser
 
 from modules.arithmetic     import *
 from modules.builtin_types  import *
+from modules.logic          import *
 
 # TODO:
+# * Make boolean type parsing a little stricter?
 # * Move type checker to semantic analyser?
 #   Attempted, will increase complexity with current solution, so maybe a future iteration
 #   - Mapping for binop in unop defining what datatypes are returned
@@ -49,6 +51,7 @@ class TokenType(Enum):
     FLOAT_DIV       = '/'
     PLUS            = '+'
     SUB             = '-'
+    NOT             = '!'
     RETURNS_OP      = '->'
     LPAREN          = '('
     RPAREN          = ')'
@@ -59,10 +62,12 @@ class TokenType(Enum):
     BEGIN           = '{'
     END             = '}'
     # reserved keywords
+    DEFINITION      = 'def'
     INTEGER         = 'int'
     FLOAT           = 'float'
     BOOLEAN         = 'bool'
-    DEFINITION      = 'def'
+    AND             = 'and'
+    OR              = 'or'
     # dynamic token types
     INTEGER_LITERAL = 'INTEGER_LITERAL'
     FLOAT_LITERAL   = 'FLOAT_LITERAL'
@@ -482,6 +487,7 @@ class NumNode(LeafNode):
         self.token: Token = token
         self.id: int | str | None | Type = self.token.id
 
+
 class BoolNode(LeafNode):
     """
     BoolNode() represents boolean literals `True` and `False`
@@ -490,6 +496,7 @@ class BoolNode(LeafNode):
         super().__init__(token)
         self.token: Token = token
         self.id: int | str | None | Type = self.token.id
+
 
 ###########################################
 #                                         #
@@ -846,10 +853,12 @@ class Lexer:
         self.reached_end_counter = 0
 
         self.RESERVED_KEYWORDS: dict[str, tuple[TokenType, Type | None]] = {
+            'def'   :   (TokenType.DEFINITION, 'def'),
+            'and'   :   (TokenType.AND, 'and'),
+            'or'    :   (TokenType.OR, 'or'),
             'int'   :   (TokenType.INTEGER, Int),
             'float' :   (TokenType.FLOAT, Float),
             'bool'  :   (TokenType.BOOLEAN, Bool),
-            'def'   :   (TokenType.DEFINITION, None),
             'True'  :   (TokenType.BOOLEAN_LITERAL, Bool(1)),
             'False' :   (TokenType.BOOLEAN_LITERAL, Bool(0))
         }
@@ -1080,6 +1089,11 @@ class Lexer:
 
                 return token
 
+            elif self.current_char == '!':
+                token = Token(TokenType.NOT, self.current_char, self.lineno, self.linecol)
+                self.advance()
+                return token
+            
             # Symbols
 
             elif self.current_char == ";":
@@ -1538,7 +1552,33 @@ class Parser:
 
     def expr(self) -> Node:
         """
-        expr -> term ((`PLUS`|`MINUS`) term)*
+        expr -> num_expr ((`AND`|`OR`) num_expr)*
+        """
+        node = self.num_expr()
+        
+        # ((`AND`|`OR`) num_expr)*
+        while self.current_token.type in (TokenType.AND, TokenType.OR):
+            token = self.current_token
+            
+            if token.type == TokenType.AND:
+                self.eat(TokenType.AND)
+                
+            elif token.type == TokenType.OR:
+                self.eat(TokenType.OR)
+                
+            node = BinOp(
+                left=node,
+                op=token,
+                right=self.num_expr()
+            )
+            
+        log(f"Parser: created {node.__class__.__name__}() <{self.current_token.lineno}:{self.current_token.linecol}> in {getframeinfo(currentframe()).function}()", level=LogLevel.ALL)
+        return node
+        
+        
+    def num_expr(self) -> Node:
+        """
+        num_expr -> term ((`PLUS`|`MINUS`) term)*
         """
         node = self.term()
 
@@ -1552,7 +1592,11 @@ class Parser:
             elif token.type == TokenType.SUB:
                 self.eat(TokenType.SUB)
 
-            node = BinOp(left=node, op=token, right=self.term())
+            node = BinOp(
+                left=node,
+                op=token,
+                right=self.term()
+            )
 
         log(f"Parser: created {node.__class__.__name__}() <{self.current_token.lineno}:{self.current_token.linecol}> in {getframeinfo(currentframe()).function}()", level=LogLevel.ALL)
         return node
@@ -1584,6 +1628,7 @@ class Parser:
     def factor(self) -> Node:
         """
         factor -> `MINUS` factor
+                | `NOT` factor
                 | `INTEGER_LITERAL`
                 | `FLOAT_LITERAL` 
                 | `BOOLEAN_LITERAL`
@@ -1595,6 +1640,11 @@ class Parser:
         # `MINUS` factor
         if token.type == TokenType.SUB:
             self.eat(TokenType.SUB)
+            node = UnaryOp(token, self.factor())
+            
+        # `NOT` factor
+        elif token.type == TokenType.NOT:
+            self.eat(TokenType.NOT)
             node = UnaryOp(token, self.factor())
 
         # `INTEGER_LITERAL`
@@ -1673,12 +1723,15 @@ class Parser:
 
         empty ->
         // What did you expect cuh
-
-        expr -> term ((`PLUS`|`MINUS`) term)*
+                       
+        expr -> num_expr ((`AND`|`OR`) num_expr)*
+    
+        num_expr -> term ((`PLUS`|`MINUS`) term)*
 
         term -> factor ((`MUL`|`INTEGER_DIV`|`FLOAT_DIV`) factor)*
 
         factor -> `MINUS` factor
+                | `NOT` factor
                 | `INTEGER_LITERAL`
                 | `FLOAT_LITERAL`
                 | `BOOLEAN_LITERAL` 
@@ -2081,38 +2134,83 @@ class Interpreter(NodeVisitor):
                 )
                 
             return result
+        
+        elif node.op.type == TokenType.NOT:
+            value = self.visit(node.expr)
+            original_value_name = type(value).__name__
+            
+            if not isinstance(value, Bool):
+                value = value.to(Bool)
+                
+            result = bool_not(value)
+                
+            if result is None:
+                self.error(
+                    error_code=ErrorCode.TYPE_ERROR,
+                    token=node.op,  # TODO: Extract proper token from problematic node
+                    message=f"Unsupported operation {repr(node.op.id)} for type <{original_value_name}>"
+                )
+                
+            return result
 
     def visit_BinOp(self, node: BinOp):
         left_value = self.visit(node.left)
         right_value = self.visit(node.right)
-
-        if isinstance(left_value, Bool):
-            left_value = left_value.to(Int)
-        
-        if isinstance(right_value, Bool):
-            right_value = right_value.to(Int)
         
         # Enum value : function
         mapping = {
-            TokenType.PLUS: add,
-            TokenType.SUB: sub,
-            TokenType.MULT: mult,
-            TokenType.INTEGER_DIV: floordiv,
-            TokenType.FLOAT_DIV: truediv
+            TokenType.PLUS:         add,
+            TokenType.SUB:          sub,
+            TokenType.MULT:         mult,
+            TokenType.INTEGER_DIV:  floordiv,
+            TokenType.FLOAT_DIV:    truediv,
+            
+            TokenType.AND: bool_and,
+            TokenType.OR:  bool_or
         }
         
         operation = mapping.get(node.op.type)
         
-        if operation is not None:
+        original_left_value_name = type(left_value).__name__
+        original_right_value_name = type(right_value).__name__
+        
+        if operation in [add, sub, mult, floordiv, truediv]:
+            
+            if isinstance(left_value, Bool):
+                left_value = left_value.to(Int)
+            
+            if isinstance(right_value, Bool):
+                right_value = right_value.to(Int)
+            
             value = operation(left_value, right_value)
             if value is None:
                 self.error(
                     error_code=ErrorCode.TYPE_ERROR,
                     token=node.op,  # TODO: Extract proper token from problematic node
-                    message=f"Unsupported operation {repr(node.op.id)} between <{type(left_value).__name__}> and <{type(right_value).__name__}>"
+                    message=f"Unsupported operation {repr(node.op.id)} between <{original_left_value_name}> and <{original_right_value_name}>"
                 )
+                
             return value
         
+        elif operation in [bool_and, bool_or]:
+            
+            if not isinstance(left_value, Bool):
+                left_value = left_value.to(Bool)
+            
+            if not isinstance(right_value, Bool):
+                right_value = right_value.to(Bool)
+                
+            value = operation(left_value, right_value)
+            
+            if value is None:
+                self.error(
+                    error_code=ErrorCode.TYPE_ERROR,
+                    token=node.op,  # TODO: Extract proper token from problematic node
+                    message=f"Unsupported operation {repr(node.op.id)} between <{original_left_value_name}> and <{original_right_value_name}>, boolean operations must consist of values that are able to interpreted as a boolean."
+                )
+                
+            return value
+            
         else:
             log(f"Unkown operation {repr(node.op.type)}, illegal state", level=config.getint("logging.levels.CRITICAL"))
             exit()

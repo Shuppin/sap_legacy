@@ -1,5 +1,5 @@
 """
-Module which is responsible for all arithmetic operations.
+Module which is responsible for all arithmetic operations ('+', '-' etc...). 
 
 Essentially it converts SAP types into native Python types
 and performs native python arithmetic on them
@@ -14,7 +14,6 @@ if __name__ == '__main__':
     # Not used
     # from config         import ConfigParser
     from overloading    import create_overload
-
     from builtin_types  import *
 else:
     # Not used

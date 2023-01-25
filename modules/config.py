@@ -1,4 +1,8 @@
-# tomllib is new in Python 3.11#
+"""
+Module which is responsible for loading, and parsing the config file
+so different parts of the program can access the same global variables.
+"""
+# tomllib is new in Python 3.11
 # so just ensure the user is running
 # on a valid version
 try:
