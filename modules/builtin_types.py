@@ -39,6 +39,12 @@ class Bool(Type):
         self.value: int = 1 if value > 0 else 0
         literal_value = "True" if value > 0 else "False"
         super().__init__(literal_value)
+    
+    def toInt(self):
+        return Int(str(self.value))
+
+    def toFloat(self):
+        return Float(f"{str(self.value)}.0")
 
 
 class Int(Type):

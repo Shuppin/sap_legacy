@@ -61,11 +61,14 @@ class TokenType(Enum):
     # reserved keywords
     INTEGER         = 'int'
     FLOAT           = 'float'
+    BOOLEAN         = 'bool'
     DEFINITION      = 'def'
     # dynamic token types
     INTEGER_LITERAL = 'INTEGER_LITERAL'
     FLOAT_LITERAL   = 'FLOAT_LITERAL'
+    BOOLEAN_LITERAL = 'BOOLEAN_LITERAL'
     IDENTIFIER      = 'IDENTIFIER'
+    # other
     EOF             = 'EOF'
 
 
@@ -378,7 +381,7 @@ class VarDecl(InteriorNode):
     """
     def __init__(self, type_node, var_node, assign_op=None, expr_node=None):
         self.type_node: TypeNode = type_node
-        self.var_node: Var = var_node
+        self.var_node: VarNode = var_node
         self.assign_op: Token | None = assign_op
         self.expr_node: Node | None = expr_node
 
@@ -388,7 +391,7 @@ class ProcedureDecl(InteriorNode):
     ProcedureDecl() represents a procedure declaration statement
     """
     def __init__(self, procedure_var, params, compound_node, return_type=None):
-        self.procedure_var: Var = procedure_var
+        self.procedure_var: VarNode = procedure_var
         self.params: list[Param] = params
         self.return_type: TypeNode | None = return_type
         self.compound_node: Compound = compound_node
@@ -399,7 +402,7 @@ class ProcedureCall(InteriorNode):
     ProcedureCall() represents a procedure call statement
     """
     def __init__(self, procedure_var, literal_params):
-        self.procedure_var: Var = procedure_var
+        self.procedure_var: VarNode = procedure_var
         self.literal_params: list[Param] = literal_params
         self.procedure_symbol: ProcedureSymbol | None = None
 
@@ -438,7 +441,7 @@ class Param(InteriorNode):
     Param() represents a defined argument within a procedure declaration
     """
     def __init__(self, var_node, type_node):
-        self.var_node: Var = var_node
+        self.var_node: VarNode = var_node
         self.type_node: TypeNode = type_node
 
 
@@ -457,28 +460,36 @@ class TypeNode(LeafNode):
     def __init__(self, token):
         super().__init__(token)
         self.token: Token = token
-        self.id = self.token.type
+        self.id: int | str | None | Type = self.token.type
 
 
-class Var(LeafNode):
+class VarNode(LeafNode):
     """
-    Var() represents a variable
-    """
-    def __init__(self, token):
-        super().__init__(token)
-        self.token: Token = token
-        self.id = self.token.id
-
-
-class Num(LeafNode):
-    """
-    Num() represents any number-like literal such as `23` or `3.14`
+    VarNode() represents a variable
     """
     def __init__(self, token):
         super().__init__(token)
         self.token: Token = token
-        self.id: int | str | None = self.token.id
+        self.id: int | str | None | Type = self.token.id
 
+
+class NumNode(LeafNode):
+    """
+    NumNode() represents any number-like literal such as `23` or `3.14`
+    """
+    def __init__(self, token):
+        super().__init__(token)
+        self.token: Token = token
+        self.id: int | str | None | Type = self.token.id
+
+class BoolNode(LeafNode):
+    """
+    BoolNode() represents boolean literals `True` and `False`
+    """
+    def __init__(self, token):
+        super().__init__(token)
+        self.token: Token = token
+        self.id: int | str | None | Type = self.token.id
 
 ###########################################
 #                                         #
@@ -569,6 +580,7 @@ class SymbolTable:
         if self.scope_level == 0:
             self.define(BuiltinSymbol(Int))
             self.define(BuiltinSymbol(Float))
+            self.define(BuiltinSymbol(Bool))
             log("SymbolTable: Defined built-in symbols for", repr(self.scope_name), level=LogLevel.VERBOSE)
 
     def __str__(self) -> str:
@@ -836,7 +848,10 @@ class Lexer:
         self.RESERVED_KEYWORDS: dict[str, tuple[TokenType, Type | None]] = {
             'int'   :   (TokenType.INTEGER, Int),
             'float' :   (TokenType.FLOAT, Float),
-            'def'   :   (TokenType.DEFINITION, None)
+            'bool'  :   (TokenType.BOOLEAN, Bool),
+            'def'   :   (TokenType.DEFINITION, None),
+            'True'  :   (TokenType.BOOLEAN_LITERAL, Bool(1)),
+            'False' :   (TokenType.BOOLEAN_LITERAL, Bool(0))
         }
         log("Lexer: created `RESERVED_KEYWORDS` table")
         log("Lexer.__init__() complete", stackoffset=1)
@@ -1204,7 +1219,8 @@ class Parser:
         """
         if self.current_token.type in [
             TokenType.INTEGER,
-            TokenType.FLOAT
+            TokenType.FLOAT,
+            TokenType.BOOLEAN,
         ]:
             return True
         else:
@@ -1363,7 +1379,7 @@ class Parser:
         """
         procedure_call -> variable `LPAREN` (empty | expr (`COMMA` expr)*) `RPAREN`
         """
-        procedure_var = Var(
+        procedure_var = VarNode(
             self.current_token
         )
 
@@ -1569,7 +1585,8 @@ class Parser:
         """
         factor -> `MINUS` factor
                 | `INTEGER_LITERAL`
-                | `FLOAT_CONST` 
+                | `FLOAT_LITERAL` 
+                | `BOOLEAN_LITERAL`
                 | `LPAREN` expr `RPAREN`
                 | variable
         """
@@ -1583,12 +1600,16 @@ class Parser:
         # `INTEGER_LITERAL`
         elif token.type == TokenType.INTEGER_LITERAL:
             self.eat(TokenType.INTEGER_LITERAL)
-            node = Num(token)
+            node = NumNode(token)
 
         # `FLOAT_CONST`
         elif token.type == TokenType.FLOAT_LITERAL:
             self.eat(TokenType.FLOAT_LITERAL)
-            node = Num(token)
+            node = NumNode(token)
+
+        elif token.type == TokenType.BOOLEAN_LITERAL:
+            self.eat(TokenType.BOOLEAN_LITERAL)
+            node = BoolNode(token)
 
         # `LPAREN` expr `RPAREN`
         elif token.type == TokenType.LPAREN:
@@ -1603,11 +1624,11 @@ class Parser:
         log(f"Parser: created {node.__class__.__name__}() <{self.current_token.lineno}:{self.current_token.linecol}> in {getframeinfo(currentframe()).function}()", level=LogLevel.ALL)
         return node
 
-    def variable(self) -> Var:
+    def variable(self) -> VarNode:
         """
         variable -> `IDENTIFIER`
         """
-        node = Var(self.current_token)
+        node = VarNode(self.current_token)
         self.eat(TokenType.IDENTIFIER)
         log(f"Parser: created {node.__class__.__name__}() <{self.current_token.lineno}:{self.current_token.linecol}> in {getframeinfo(currentframe()).function}()", level=LogLevel.ALL)
         return node
@@ -1648,7 +1669,7 @@ class Parser:
 
         formal_parameter -> type_spec variable
 
-        type_spec -> `INTEGER` | `FLOAT`
+        type_spec -> `INTEGER` | `FLOAT` | `BOOL`
 
         empty ->
         // What did you expect cuh
@@ -1659,7 +1680,8 @@ class Parser:
 
         factor -> `MINUS` factor
                 | `INTEGER_LITERAL`
-                | `FLOAT_CONST` 
+                | `FLOAT_LITERAL`
+                | `BOOLEAN_LITERAL` 
                 | `LPAREN` expr `RPAREN`
                 | variable
 
@@ -1833,7 +1855,7 @@ class SemanticAnalyser(NodeVisitor):
         else:
             return type_symbol
 
-    def visit_Var(self, node: Var):
+    def visit_VarNode(self, node: VarNode):
         var_id = node.id
         var_symbol = self.current_scope.lookup(var_id)
 
@@ -1846,7 +1868,10 @@ class SemanticAnalyser(NodeVisitor):
         else:
             return var_symbol
 
-    def visit_Num(self, node):
+    def visit_NumNode(self, node):
+        pass
+
+    def visit_BoolNode(self, node):
         pass
 
     def visit_NoOp(self, node):
@@ -1935,18 +1960,19 @@ class Interpreter(NodeVisitor):
             # Ensure type is correct
             if variable_type != type(expression_value):
                 
-                # Attempt to parse to another type
-                expression_value = expression_value.to(variable_type)
+                # If not, attempt to parse to expected type
+                new_expression_value = expression_value.to(variable_type)
                 
                 # If that fails, error
-                if expression_value is None:
+                if new_expression_value is None:
                     self.error(
                         error_code=ErrorCode.TYPE_ERROR,
-                        token=node.left,
-                        message=f"Attempted to assign value with type <{type(expression_value).__name__}> to var with incompatible type <{variable_type.__name__}>"
+                        token=node.var_node.token,
+                        message=f"Attempted to assign expression with type <{type(expression_value).__name__}> to var with incompatible type <{variable_type.__name__}>"
                     )
                     
-                # Else, continue on as normal
+                # A new var is created to ensure error prints correct type 
+                expression_value = new_expression_value
 
             current_ar.set(
                 Member(
@@ -2059,6 +2085,12 @@ class Interpreter(NodeVisitor):
     def visit_BinOp(self, node: BinOp):
         left_value = self.visit(node.left)
         right_value = self.visit(node.right)
+
+        if isinstance(left_value, Bool):
+            left_value = left_value.to(Int)
+        
+        if isinstance(right_value, Bool):
+            right_value = right_value.to(Int)
         
         # Enum value : function
         mapping = {
@@ -2089,7 +2121,7 @@ class Interpreter(NodeVisitor):
         # Not utilised yet
         pass
 
-    def visit_Var(self, node: Var):
+    def visit_VarNode(self, node: VarNode):
         variable_id = node.id
         variable = self.call_stack.get(variable_id)
         if variable is None:
@@ -2108,7 +2140,10 @@ class Interpreter(NodeVisitor):
         else:
             return variable.value
 
-    def visit_Num(self, node: Num):
+    def visit_NumNode(self, node: NumNode):
+        return node.id
+
+    def visit_BoolNode(self, node: BoolNode):
         return node.id
 
     def visit_NoOp(self, node: NoOp):

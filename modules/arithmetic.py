@@ -54,7 +54,6 @@ logger.addHandler(handler)
 
 LOG_ALL = config.getint("logging.levels.ALL")
 """
-
 @create_overload
 def add() -> Type: ...
 
@@ -143,8 +142,8 @@ def negate(int1: Int):
     return Int(-int(int1.literal_value))
 
 @negate.overload()
-def negate(int1: Float):
-    return Float(-int(int1.literal_value))
+def negate(float1: Float):
+    return Float(-float(float1.literal_value))
     
 
 if __name__ == '__main__':

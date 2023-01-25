@@ -1,8 +1,16 @@
 # Changelog
 
+## [0.0.1-pre.35] - 22-01-2023
+
+### Added
+
+- Fully implemented booleans
+- Minor bugfixes
+- `.log` files are now ignored
+
 ## [0.0.1-pre.34] - 22-01-2023
 
-## Changes
+### Changes
 
 - Fixed issue with modules logging to the incorrect file
 
