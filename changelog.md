@@ -1,4 +1,17 @@
 # Changelog
+Format: `[version] - DD-MM-YYYY`
+#
+
+## [0.0.1-pre.37] - 22-01-2023
+
+### Changes
+
+- Replaced `:=` symbol with `=`
+- Updated `__version__` (i forgot it existed)
+
+### Added
+
+- Format information to changelog file
 
 ## [0.0.1-pre.36] - 22-01-2023
 
@@ -63,7 +76,7 @@
 - `.gitignore` file
 - Interpreter now supports variables from the outer scope
 
-### Changed
+### Changes
 
 - Moved other files into `modules` folder
 - Moved `icons` folder into `other` folder

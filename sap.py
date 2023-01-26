@@ -24,7 +24,7 @@ from modules.logic          import *
 #   Attempted, will increase complexity with current solution, so maybe a future iteration
 #   - Mapping for binop in unop defining what datatypes are returned
 
-__version__ = "0.0.1-pre.34"
+__version__ = "0.0.1-pre.37"
 
 config_path = "config.toml"
 config = ConfigParser(config_path, override_logfile=True)
@@ -55,7 +55,7 @@ class TokenType(Enum):
     RETURNS_OP      = '->'
     LPAREN          = '('
     RPAREN          = ')'
-    ASSIGN          = ':='
+    ASSIGN          = '='
     SEMI            = ';'
     COLON           = ':'
     COMMA           = ','
@@ -1049,8 +1049,8 @@ class Lexer:
 
             # Operators
 
-            elif self.current_char == ":" and self.peek() == "=":
-                token = Token(TokenType.ASSIGN, ':=', self.lineno, self.linecol)
+            elif self.current_char == "=":
+                token = Token(TokenType.ASSIGN, '=', self.lineno, self.linecol)
                 self.advance()
                 self.advance()
                 return token
