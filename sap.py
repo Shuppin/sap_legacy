@@ -24,7 +24,7 @@ from modules.logic          import *
 #   Attempted, will increase complexity with current solution, so maybe a future iteration
 #   - Mapping for binop in unop defining what datatypes are returned
 
-__version__ = "0.0.1-pre.37"
+__version__ = "0.0.1-pre.38"
 
 config_path = "config.toml"
 config = ConfigParser(config_path, override_logfile=True)
@@ -61,6 +61,12 @@ class TokenType(Enum):
     COMMA           = ','
     BEGIN           = '{'
     END             = '}'
+    EQUAL           = '=='
+    INEQUAL         = '!='
+    LESS            = '<'
+    LESSEQ          = '<='
+    MORE            = '>'
+    MOREEQ          = ">="
     # reserved keywords
     DEFINITION      = 'def'
     INTEGER         = 'int'
@@ -1050,8 +1056,11 @@ class Lexer:
             # Operators
 
             elif self.current_char == "=":
-                token = Token(TokenType.ASSIGN, '=', self.lineno, self.linecol)
-                self.advance()
+                if self.peek() == "=":
+                    token = Token(TokenType.EQUAL, '==', self.lineno, self.linecol)
+                    self.advance()
+                else:
+                    token = Token(TokenType.ASSIGN, '=', self.lineno, self.linecol)
                 self.advance()
                 return token
 
@@ -1090,10 +1099,32 @@ class Lexer:
                 return token
 
             elif self.current_char == '!':
-                token = Token(TokenType.NOT, self.current_char, self.lineno, self.linecol)
+                if self.peek() == '=':
+                    token = Token(TokenType.INEQUAL, '!=', self.lineno, self.linecol)
+                    self.advance()
+                else:
+                    token = Token(TokenType.NOT, self.current_char, self.lineno, self.linecol)
                 self.advance()
                 return token
             
+            elif self.current_char == "<":
+                if self.peek() == "=":
+                    token = Token(TokenType.LESSEQ, "<=", self.lineno, self.linecol)
+                    self.advance()
+                else:
+                    token = Token(TokenType.LESS, "<", self.lineno, self.linecol)
+                self.advance()
+                return token
+
+            elif self.current_char == ">":
+                if self.peek() == "=":
+                    token = Token(TokenType.MOREEQ, ">=", self.lineno, self.linecol)
+                    self.advance()
+                else:
+                    token = Token(TokenType.MORE, ">", self.lineno, self.linecol)
+                self.advance()
+                return token
+
             # Symbols
 
             elif self.current_char == ";":
@@ -1552,9 +1583,9 @@ class Parser:
 
     def expr(self) -> Node:
         """
-        expr -> num_expr ((`AND`|`OR`) num_expr)*
+        expr -> comp_expr ((`AND`|`OR`) comp_expr)*
         """
-        node = self.num_expr()
+        node = self.comp_expr()
         
         # ((`AND`|`OR`) num_expr)*
         while self.current_token.type in (TokenType.AND, TokenType.OR):
@@ -1569,12 +1600,37 @@ class Parser:
             node = BinOp(
                 left=node,
                 op=token,
-                right=self.num_expr()
+                right=self.comp_expr()
             )
             
         log(f"Parser: created {node.__class__.__name__}() <{self.current_token.lineno}:{self.current_token.linecol}> in {getframeinfo(currentframe()).function}()", level=LogLevel.ALL)
         return node
         
+    def comp_expr(self) -> Node:
+        """
+        comp_expr -> num_expr ((`EQUAL`|`INEQUAL`|`LESS`|`MORE`|`LESSEQ`|`MOREEQ`) num_expr)*
+        """
+        node = self.num_expr()
+
+        while self.current_token.type in [
+            TokenType.EQUAL,
+            TokenType.INEQUAL,
+            TokenType.LESS,
+            TokenType.MORE,
+            TokenType.LESSEQ,
+            TokenType.MOREEQ
+        ]:
+            token = self.current_token
+            self.eat(token.type)
+
+            node = BinOp(
+                left=node,
+                op=token,
+                right=self.num_expr()
+            )
+
+        log(f"Parser: created {node.__class__.__name__}() <{self.current_token.lineno}:{self.current_token.linecol}> in {getframeinfo(currentframe()).function}()", level=LogLevel.ALL)
+        return node
         
     def num_expr(self) -> Node:
         """
@@ -1724,7 +1780,9 @@ class Parser:
         empty ->
         // What did you expect cuh
                        
-        expr -> num_expr ((`AND`|`OR`) num_expr)*
+        expr -> comp_expr ((`AND`|`OR`) comp_expr)*
+
+        comp_expr -> num_expr ((`EQUAL`|`INEQUAL`|`LESS`|`MORE`|`LESSEQ`|`MOREEQ`) num_expr)*
     
         num_expr -> term ((`PLUS`|`MINUS`) term)*
 

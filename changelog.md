@@ -4,6 +4,12 @@ Format: `[version] - DD-MM-YYYY`
 
 ## [0.0.1-pre.37] - 22-01-2023
 
+### Added
+
+- Comparison operators parsing (need to update interpreter)
+
+## [0.0.1-pre.37] - 22-01-2023
+
 ### Changes
 
 - Replaced `:=` symbol with `=`
