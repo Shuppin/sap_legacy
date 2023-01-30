@@ -2,7 +2,17 @@
 Format: `[version] - DD-MM-YYYY`
 #
 
-## [0.0.1-pre.37] - 22-01-2023
+## [0.0.1-pre.39] - 22-01-2023
+
+### Added
+
+- `comparison.py` module, still needs finishing
+
+### Changed
+
+- `syntax_showcase.sap` & `procedure_calls.sap` now execute fully
+
+## [0.0.1-pre.38] - 22-01-2023
 
 ### Added
 

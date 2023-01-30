@@ -24,7 +24,7 @@ from modules.logic          import *
 #   Attempted, will increase complexity with current solution, so maybe a future iteration
 #   - Mapping for binop in unop defining what datatypes are returned
 
-__version__ = "0.0.1-pre.38"
+__version__ = "0.0.1-pre.39"
 
 config_path = "config.toml"
 config = ConfigParser(config_path, override_logfile=True)

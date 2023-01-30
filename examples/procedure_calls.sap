@@ -1,5 +1,3 @@
-// Broken while I add nested activation record lookups
-
 def println(int std_out_code, float e) {
     // dummy function to represent printing
     int x = 5 + std_out_code;
