@@ -2,6 +2,18 @@
 Format: `[version] - DD-MM-YYYY`
 #
 
+## [0.0.1-pre.40] - 22-01-2023
+
+### Changed
+
+- Completely rewrote arithmetic, logic and comparsion system to use less syntax. `logic.py`, `arithmetic.py` and `comparison.py` have been reduced to a single file `operand.py`
+- Cleaned up code and improved documentation in certain areas
+- Comparsion operator `!=` (not equal to) changed to `~=`
+
+### Removed
+
+- `overloading.py` module no longer used, moved to `SAP/other`
+
 ## [0.0.1-pre.39] - 22-01-2023
 
 ### Added

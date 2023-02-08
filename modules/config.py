@@ -22,6 +22,7 @@ class ConfigParser:
     """
     def __init__(self, filename="config.toml", override_logfile=False) -> None:
         
+        # Attempt to load config file
         with open(filename, "rb") as file:
             try:
                 self.data: dict = tomllib.load(file)
@@ -32,6 +33,7 @@ class ConfigParser:
         # Formatter defines how each line will look in the config file
         formatter = logging.Formatter(self.getstr("logging.format") or "%(levelname)s:%(name)s:%(message)s", datefmt=self.getstr("logging.datefmt") or "%H:%M:%S")
         
+        # Create the logs folder if no such folder exists
         if not exists("logs"):
             mkdir("logs")
 
@@ -73,7 +75,7 @@ class ConfigParser:
             message = "(ConfigParser) An unexpected error occured while trying to parse config file"
         
         # If self._error() was called before self.data was loaded,
-        # we want to use hard-coded values instead
+        # we want to use pre-defined values instead
         if hasattr(self, "data"):
             # The 'or' statements ensure a valid value is assigned,
             # even if the get functions return None
@@ -90,7 +92,7 @@ class ConfigParser:
             self._logger.log(msg=f"{type(self).__name__}: Successfully constructed error message", level=log_level)
             self._logger.log(msg=f"{type(self).__name__}: Program terminating with a success state", level=log_level)
 
-        # Print error message
+        # Output error message
         if should_raise_error:
             raise Exception(message)
         else:

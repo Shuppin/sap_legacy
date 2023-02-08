@@ -14,9 +14,8 @@ from time           import time as current_time
 
 from modules.config         import ConfigParser
 
-from modules.arithmetic     import *
+from modules.operand        import *
 from modules.builtin_types  import *
-from modules.logic          import *
 
 # TODO:
 # * Make boolean type parsing a little stricter?
@@ -24,8 +23,9 @@ from modules.logic          import *
 #   Attempted, will increase complexity with current solution, so maybe a future iteration
 #   - Mapping for binop in unop defining what datatypes are returned
 
-__version__ = "0.0.1-pre.39"
+__version__ = "0.0.1-pre.40"
 
+# Load config information first
 config_path = "config.toml"
 config = ConfigParser(config_path, override_logfile=True)
 
@@ -41,7 +41,7 @@ current_filename = "<cmdline>"
 
 class TokenType(Enum):
     """
-    Enum class to hold all the token types for SAP language
+    Enum class which holds all the token types for  the SAP language
     """
     # These values do not represent how the lexer identifies tokens,
     # they are just represent what these tokens look like
@@ -62,7 +62,7 @@ class TokenType(Enum):
     BEGIN           = '{'
     END             = '}'
     EQUAL           = '=='
-    INEQUAL         = '!='
+    INEQUAL         = '~='
     LESS            = '<'
     LESSEQ          = '<='
     MORE            = '>'
@@ -84,24 +84,21 @@ class TokenType(Enum):
 
 
 class ActivationRecordType(Enum):
+    """
+    Enum class which holds all the types an activation record can have
+    """
     PROGRAM     = "PROGRAM"
     PROCEDURE   = "PROCEDURE"
 
 
 class ErrorCode(Enum):
+    """
+    Enum class which holds all the error code for the SAP language
+    """
     SYNTAX_ERROR    = "SyntaxError"
     NAME_ERROR      = "NameError"
     TYPE_ERROR      = "TypeError"
 
-
-class LogLevel:
-    CRITICAL        = config.getint("logging.levels.CRITICAL")
-    INFO            = config.getint("logging.levels.INFO")
-    DEBUG           = config.getint("logging.levels.DEBUG")
-    VERBOSE         = config.getint("logging.levels.VERBOSE")
-    HIGHLY_VERBOSE  = config.getint("logging.levels.HIGHLY_VERBOSE")
-    EAT_STACK       = config.getint("logging.levels.EAT_STACK")
-    ALL             = config.getint("logging.levels.ALL")
 
 ###########################################
 #                                         #
@@ -130,9 +127,24 @@ class Token:
         return repr(self.__str__())
 
 
+class LogLevel:
+    """
+    Data class which holds all the logging levels used by the logger
+
+    This avoids calling the config.get() function evertime we want to access a logging level
+    """
+    CRITICAL        = config.getint("logging.levels.CRITICAL")
+    INFO            = config.getint("logging.levels.INFO")
+    DEBUG           = config.getint("logging.levels.DEBUG")
+    VERBOSE         = config.getint("logging.levels.VERBOSE")
+    HIGHLY_VERBOSE  = config.getint("logging.levels.HIGHLY_VERBOSE")
+    EAT_STACK       = config.getint("logging.levels.EAT_STACK")
+    ALL             = config.getint("logging.levels.ALL")
+
+
 class Member:
     """
-    Member object
+    Member data class
 
     Data class to represent item within activation record
     """
@@ -191,9 +203,9 @@ class BaseError(Exception):
         Output looks like this:
         ```
         File '.\\integers.sap', position <2:16>
-        │ 1 │ int x := 5;
-        │ 2 │ int y := x + 3 +
-                              ^
+        │ 1 │ int x = 5;
+        │ 2 │ int y = x + 3 +
+                            ^
         (Parser) SyntaxError: Expected type <IDENTIFIER> but got type <EOF>
         ```
         """
@@ -207,7 +219,7 @@ class BaseError(Exception):
 
         # Creates the message with the '~~~' highlighter
         # For example:
-        # | 1 | inte x := 4;
+        # | 1 | inte x = 4;
         #       ~~~~
         if self.surrounding_lines is not None and self.token is not None and self.token.startcol is not None:
             error_message = [
@@ -224,8 +236,8 @@ class BaseError(Exception):
 
         # Creates the message with the '^' highlighter
         # For example:
-        # | 1 | int x := 4 $ 3
-        #                  ^
+        # | 1 | int x = 4 $ 3
+        #                 ^
         elif self.surrounding_lines is not None:
             error_message = [
                 (f'File "{current_filename}", position <{self.lineno}:{self.linecol}>\n'),
@@ -449,7 +461,7 @@ class BinOp(InteriorNode):
 
 class Param(InteriorNode):
     """
-    Param() represents a defined argument within a procedure declaration
+    Param() represents a parameter within a procedure declaration
     """
     def __init__(self, var_node, type_node):
         self.var_node: VarNode = var_node
@@ -459,14 +471,15 @@ class Param(InteriorNode):
 class NoOp(InteriorNode):
     """
     NoOp() represents an empty statement,
-    for example there would be a NoOp between `;;` because semicolons act as separators
+    for example there would be a NoOp between `;;` because semicolons
+    act as separators, which need something to seperate.
     """
     pass
 
 
 class TypeNode(LeafNode):
     """
-    TypeNode() represents a data type
+    TypeNode() represents a data type literal
     """
     def __init__(self, token):
         super().__init__(token)
@@ -513,6 +526,8 @@ class BoolNode(LeafNode):
 class BaseSymbol:
     """
     Symbol base class
+
+    Symbols are the component which makes up a symbol table
     """
     def __init__(self, name, datatype=None):
         if datatype is None:
@@ -580,6 +595,14 @@ class ProcedureSymbol(BaseSymbol):
 class SymbolTable:
     """
     Class to store all the program symbols
+
+    The symbol table is responsible for keeping track of semantics of symbols.
+    It stores information about type, scope level and various other symbol-specific attributes.
+
+    There are 3 types of symbols:
+    - VarSymbols store information about variables.
+    - BuiltinSymbols store information about built-in data types
+    - ProcedureSymbols store information about a procedure's parameters, and the contents of the procedure
     """
     def __init__(self, scope_name, scope_level, parent_scope=None):
         self._symbols: dict[str, BaseSymbol] = {}
@@ -690,6 +713,11 @@ class SymbolTable:
 ###########################################
 
 class ActivationRecord:
+    """
+    A simple class which represents a change in scope, and information about the new scope.
+
+    ActivationRecords make up the call stack, which is used to keep track of memory and current scope.
+    """
     def __init__(self, name: str, ar_type: ActivationRecordType, nesting_level: int):
         self.name: str = name
         self.ar_type: ActivationRecordType = ar_type
@@ -733,6 +761,14 @@ class ActivationRecord:
 
 
 class CallStack:
+    """
+    The call stack is responsible for keeping track of the program memory and
+    all the scope information about the program in it's current state.
+
+    It is made up of activation records which contain properties about each scope.
+
+    The activation record at the top of the stack is the current scope.
+    """
     def __init__(self):
         self._records: list[ActivationRecord] = []
 
@@ -749,6 +785,9 @@ class CallStack:
         return self._records.pop()
 
     def peek(self) -> ActivationRecord:
+        """
+        Return the value on the top of the stack without affecting the stack
+        """
         return self._records[-1]
 
     def get(self, variable_id: str, search_up_stack: bool = True):
@@ -783,7 +822,7 @@ class NodeVisitor:
     """
     NodeVisitor base class
 
-    Base class for all classes which visit/walk through a syntax tree
+    Base class for all classes which visits/walks through the syntax tree generated by the parser.
     """
     def __init__(self):
         log("NodeVisitor.__init__() complete", stackoffset=1)
@@ -1099,14 +1138,17 @@ class Lexer:
                 return token
 
             elif self.current_char == '!':
-                if self.peek() == '=':
-                    token = Token(TokenType.INEQUAL, '!=', self.lineno, self.linecol)
-                    self.advance()
-                else:
-                    token = Token(TokenType.NOT, self.current_char, self.lineno, self.linecol)
+                token = Token(TokenType.NOT, self.current_char, self.lineno, self.linecol)
                 self.advance()
                 return token
             
+            elif self.current_char == '~':
+                if self.peek() == '=':
+                    token = Token(TokenType.INEQUAL, '~=', self.lineno, self.linecol)
+                    self.advance()
+                    self.advance()
+                    return token
+
             elif self.current_char == "<":
                 if self.peek() == "=":
                     token = Token(TokenType.LESSEQ, "<=", self.lineno, self.linecol)
@@ -1180,7 +1222,7 @@ class Parser:
     The class is responsible for parsing the tokens and turning them into syntax trees.
     These trees make it easier to process the code and understand the relationships between tokens.
 
-    For example give the set of tokens (equivalent to `1 + 1`):
+    For example give the set of tokens (equivalent to `2 + 2`):
     ```
     Token[type = type.INTEGER_LITERAL, id = '2', start_pos = 0]
     Token[type = type.PLUS, id = '+', start_pos = 2]
@@ -1193,7 +1235,7 @@ class Parser:
         statements: [
             BinOp(
                 left: Num(
-                    token: Token[type = type.INTEGER_LITERAL, id = '1', start_pos = 0],
+                    token: Token[type = type.INTEGER_LITERAL, id = '2', start_pos = 0],
                     id: 1
                 ),
                 op: Token[type = type.PLUS, id = '+', start_pos = 2],
@@ -1995,7 +2037,7 @@ class SemanticAnalyser(NodeVisitor):
 #                                         #
 ###########################################
 
-# Currently some (slightly less) unloved garbárge
+# Currently some (even more slightly less) unloved garbárge
 class Interpreter(NodeVisitor):
     """
     Main interpreter class
@@ -2004,7 +2046,7 @@ class Interpreter(NodeVisitor):
     and compiling (not machine code) them into a final result.
     It works by 'visiting' each node in the tree and processing it based on its attributes and surrounding nodes.
 
-    It also handles type-checking at runtime
+    It also handles type-checking at runtime (for now).
     """
     def __init__(self, src: str):
         super().__init__()
@@ -2182,7 +2224,7 @@ class Interpreter(NodeVisitor):
     def visit_UnaryOp(self, node: UnaryOp):
         if node.op.type == TokenType.SUB:
             value = self.visit(node.expr)
-            result = negate(value)
+            result = operand('-', value)
             
             if result is None:
                 self.error(
@@ -2200,7 +2242,7 @@ class Interpreter(NodeVisitor):
             if not isinstance(value, Bool):
                 value = value.to(Bool)
                 
-            result = bool_not(value)
+            result = operand('not', value)
                 
             if result is None:
                 self.error(
@@ -2214,25 +2256,12 @@ class Interpreter(NodeVisitor):
     def visit_BinOp(self, node: BinOp):
         left_value = self.visit(node.left)
         right_value = self.visit(node.right)
-        
-        # Enum value : function
-        mapping = {
-            TokenType.PLUS:         add,
-            TokenType.SUB:          sub,
-            TokenType.MULT:         mult,
-            TokenType.INTEGER_DIV:  floordiv,
-            TokenType.FLOAT_DIV:    truediv,
-            
-            TokenType.AND: bool_and,
-            TokenType.OR:  bool_or
-        }
-        
-        operation = mapping.get(node.op.type)
+        op_str = node.op.id
         
         original_left_value_name = type(left_value).__name__
         original_right_value_name = type(right_value).__name__
         
-        if operation in [add, sub, mult, floordiv, truediv]:
+        if op_str in ['+','-','/','*','//']:
             
             if isinstance(left_value, Bool):
                 left_value = left_value.to(Int)
@@ -2240,7 +2269,8 @@ class Interpreter(NodeVisitor):
             if isinstance(right_value, Bool):
                 right_value = right_value.to(Int)
             
-            value = operation(left_value, right_value)
+            value = operand(op_str, left_value, right_value)
+
             if value is None:
                 self.error(
                     error_code=ErrorCode.TYPE_ERROR,
@@ -2250,7 +2280,7 @@ class Interpreter(NodeVisitor):
                 
             return value
         
-        elif operation in [bool_and, bool_or]:
+        elif op_str in ['and', 'or']:
             
             if not isinstance(left_value, Bool):
                 left_value = left_value.to(Bool)
@@ -2258,7 +2288,7 @@ class Interpreter(NodeVisitor):
             if not isinstance(right_value, Bool):
                 right_value = right_value.to(Bool)
                 
-            value = operation(left_value, right_value)
+            value = operand(op_str, left_value, right_value)
             
             if value is None:
                 self.error(
@@ -2314,7 +2344,7 @@ class Interpreter(NodeVisitor):
 
 class Driver:
     """
-    Driver code to execute the program
+    Driver code to initiate and execute all the classes in the program.
     """
     def __init__(self):
         self.filename: str = config.getstr("dev.default_filename")
@@ -2398,6 +2428,8 @@ class Driver:
 
     def cmdline_input(self):
         """
+        NOT IMPLEMENTED
+        
         Run interpreter in command line interface mode
         """
         log("Driver: Attempted to execute program in command-line mode, which is not implemented")
@@ -2449,13 +2481,19 @@ class Driver:
 
 def log(*message, level: int = LogLevel.DEBUG, stackoffset: int = 0, prefix_per_line: str = ""):
     """
-    `log("Hello\\nworld", level=10, stackoffset=0, prefix_per_line="LOGGER: ")`
-
     Logs a given message (or list of messages) to the default logger.
-    `level`: The logging level at which to write to the log
-    `stackoffset`: The number at which to offset the stack used by the logger
+
+    Example usage:
+    ```
+    log("Hello\\nworld", level=10, stackoffset=0, prefix_per_line="LOGGER: ")
+    ```
+    
+    Params:
+    - `*message`: The message to be logged
+    - `level` (optional): The logging level at which to write to the log
+    - `stackoffset` (optional): The number at which to offset the stack used by the logger
     to obtain information like line number or current function
-    `prefix_per_line`: What to prefix each line with, particularly useful
+    - `prefix_per_line` (optional): What to prefix each line with, particularly useful
     for multi-line messages
     """
     if config.getbool("behaviour.logging_enabled"):

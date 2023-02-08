@@ -48,7 +48,7 @@ def AlphaA(int a) {
 
     // Nested functions
     def Beta(int c) {
-        int y = 3;
+        int x = 3;
 
         def Gamma(int c) {
             int x = 9;

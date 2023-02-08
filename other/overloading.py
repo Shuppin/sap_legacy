@@ -11,7 +11,7 @@ from logging import Formatter
 from logging import FileHandler
 from logging import getLogger
 
-if __name__ == '__main__':
+if not __name__.startswith("modules."):
     from config import ConfigParser
 else:
     from modules.config import ConfigParser
