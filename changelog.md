@@ -2,6 +2,16 @@
 Format: `[version] - DD-MM-YYYY`
 #
 
+## [0.0.1-pre.41] - 22-01-2023
+
+### Changed
+
+- Simplified binary operation code
+
+### Added
+
+- Lexing & Parsing for if, elseif and else statements (Testing still needs to be done)
+
 ## [0.0.1-pre.40] - 22-01-2023
 
 ### Changed

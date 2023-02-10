@@ -38,7 +38,8 @@ def operand(op_str: str, obj1: Type, obj2: Type = None) -> Type | None:
         # Logic
         'and': lambda x, y: x and y,
         'or': lambda x, y: x or y,
-        # 'not' exluded because it is a unary operator which requires special handling
+        # not has special code below
+        'not': ...,
 
         # Comparison
         '==': lambda x, y: x == y,
@@ -70,14 +71,14 @@ def operand(op_str: str, obj1: Type, obj2: Type = None) -> Type | None:
     # Match code
 
     # Arithmetic
-    if matches(['+','-','/','*','//'], Int|Float, Int|Float):
+    if matches(['+','-','/','*','//'], Int|Float|Bool, Int|Float|Bool):
         return Float(operation(obj1.value, obj2.value))
     elif matches('-', Int|Float, type(None)):
         return Float(-obj1.value)
 
     # Logic
     elif matches(['and', 'or'], Int|Float|Bool, Int|Float|Bool):
-        return Bool(0 if (operation(obj1.value, obj2.value) == 0) else 1)
+        return Bool(int(operation(obj1.value, obj2.value)))
     elif matches('not', Int|Float|Bool, type(None)):
         return Bool(1 if (obj1.value == 0) else 0)
 

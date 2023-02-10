@@ -23,7 +23,7 @@ from modules.builtin_types  import *
 #   Attempted, will increase complexity with current solution, so maybe a future iteration
 #   - Mapping for binop in unop defining what datatypes are returned
 
-__version__ = "0.0.1-pre.40"
+__version__ = "0.0.1-pre.41"
 
 # Load config information first
 config_path = "config.toml"
@@ -74,6 +74,9 @@ class TokenType(Enum):
     BOOLEAN         = 'bool'
     AND             = 'and'
     OR              = 'or'
+    IF              = 'if'
+    ELSEIF          = 'elseif'
+    ELSE            = 'else'
     # dynamic token types
     INTEGER_LITERAL = 'INTEGER_LITERAL'
     FLOAT_LITERAL   = 'FLOAT_LITERAL'
@@ -154,7 +157,7 @@ class Member:
         self.value: Any = value
 
     def __str__(self):
-        return f"<{self.value.__class__.__name__}> {self.name} = {repr(self.value)}"
+        return f"<{self.value.__class__.__name__}> {self.name} = {str(self.value)}"
 
 
 ###########################################
@@ -296,6 +299,7 @@ class InterpreterError(BaseError):
     """
     pass
 
+
 ###########################################
 #                                         #
 #  Node definitions                       #
@@ -430,6 +434,15 @@ class ProcedureCall(InteriorNode):
         self.procedure_symbol: ProcedureSymbol | None = None
 
 
+class SelectionStatement(InteriorNode):
+    """
+    SelectionStatement() represents a collection of condtionals e.g. if, elseif and else
+    """
+    def __init__(self, conditionals: list[Conditional], else_conditional: Conditional|None = None):
+        self.conditionals: list[Conditional] = conditionals
+        self.else_conditional: Compound = else_conditional
+
+
 class AssignOp(InteriorNode):
     """
     AssignOp() represents an assignment operation
@@ -466,6 +479,15 @@ class Param(InteriorNode):
     def __init__(self, var_node, type_node):
         self.var_node: VarNode = var_node
         self.type_node: TypeNode = type_node
+
+
+class Conditional(InteriorNode):
+    """
+    Conditional() represents an if, elseif or else statement
+    """
+    def __init__(self, condition, compound) -> None:
+        self.condition: Node = condition
+        self.compound: Compound = compound
 
 
 class NoOp(InteriorNode):
@@ -898,14 +920,17 @@ class Lexer:
         self.reached_end_counter = 0
 
         self.RESERVED_KEYWORDS: dict[str, tuple[TokenType, Type | None]] = {
-            'def'   :   (TokenType.DEFINITION, 'def'),
-            'and'   :   (TokenType.AND, 'and'),
-            'or'    :   (TokenType.OR, 'or'),
-            'int'   :   (TokenType.INTEGER, Int),
-            'float' :   (TokenType.FLOAT, Float),
-            'bool'  :   (TokenType.BOOLEAN, Bool),
-            'True'  :   (TokenType.BOOLEAN_LITERAL, Bool(1)),
-            'False' :   (TokenType.BOOLEAN_LITERAL, Bool(0))
+            'def'       :   (TokenType.DEFINITION, 'def'),
+            'if'        :   (TokenType.IF, 'if'),
+            'elseif'    :   (TokenType.ELSEIF, 'elseif'),
+            'else'      :   (TokenType.ELSE, 'else'),
+            'and'       :   (TokenType.AND, 'and'),
+            'or'        :   (TokenType.OR, 'or'),
+            'int'       :   (TokenType.INTEGER, Int),
+            'float'     :   (TokenType.FLOAT, Float),
+            'bool'      :   (TokenType.BOOLEAN, Bool),
+            'True'      :   (TokenType.BOOLEAN_LITERAL, Bool(1)),
+            'False'     :   (TokenType.BOOLEAN_LITERAL, Bool(0))
         }
         log("Lexer: created `RESERVED_KEYWORDS` table")
         log("Lexer.__init__() complete", stackoffset=1)
@@ -1387,6 +1412,7 @@ class Parser:
                    | procedure_call
                    | variable_declaration
                    | variable_assignment
+                   | conditional_statement
                    | empty
         """
         if self.current_token.type == TokenType.BEGIN:
@@ -1401,6 +1427,8 @@ class Parser:
                 node = self.procedure_call()
             else:
                 node = self.variable_assignment()
+        elif self.current_token.type == TokenType.IF:
+            node = self.conditional_statement()
         else:
             node = self.empty()
         log(f"Parser: created {node.__class__.__name__}() <{self.current_token.lineno}:{self.current_token.linecol}> in {getframeinfo(currentframe()).function}()", level=LogLevel.ALL)
@@ -1560,6 +1588,50 @@ class Parser:
 
         log(f"Parser: created {node.__class__.__name__}() <{self.current_token.lineno}:{self.current_token.linecol}> in {getframeinfo(currentframe()).function}()", level=LogLevel.ALL)
         return node
+
+    def conditional_statement(self) -> SelectionStatement:
+        """
+        conditional_statement -> `IF` expr compound_statement (`ELSEIF` expr compound_statement)*
+                               | `IF` expr compound_statement (`ELSEIF` expr compound_statement)* `ELSE` expr compound_statement
+        """
+        # `IF` expr compound_statement
+        self.eat(TokenType.IF)
+        conditionals = [
+            Conditional(
+                condition=self.expr(),
+                compound=self.compound_statement()
+            )
+        ]
+
+        # (`ELSEIF` expr compound_statement)*
+        while self.current_token.type == TokenType.ELSEIF:
+            self.eat(TokenType.ELSEIF)
+            conditionals.append(
+                Conditional(
+                    condition=self.expr(),
+                    compound=self.compound_statement()
+                )
+            )
+
+        # Initialise else conditional to None in case of no else statement.
+        else_conditional = None
+
+        # `ELSE` expr compound_statement
+        if self.current_token.type == TokenType.ELSE:
+            self.eat(TokenType.ELSE)
+            else_conditional = self.compound_statement()
+
+        if self.current_token.type in [TokenType.ELSE, TokenType.ELSEIF]:
+            self.error(
+                error_code=ErrorCode.SYNTAX_ERROR,
+                token=self.current_token,
+                message=f"Mismatched selection statement"
+            )
+
+        return SelectionStatement(
+            conditionals=conditionals,
+            else_conditional=else_conditional
+        )
 
     def formal_parameter_list(self) -> list[Param]:
         """
@@ -1797,6 +1869,7 @@ class Parser:
                    | procedure_call
                    | variable_declaration
                    | variable_assignment
+                   | conditional_statement
                    | empty
 
         compound_statement -> `BEGIN` statement_list `END`
@@ -1810,6 +1883,9 @@ class Parser:
                               | type_spec variable (`COMMA` variable)*
 
         variable_assignment -> variable `ASSIGN` expr
+
+        conditional_statement -> `IF` expr compound_statement (`ELSEIF` expr compound_statement)*
+                               | `IF` expr compound_statement (`ELSEIF` expr compound_statement)* `ELSE` expr compound_statement
 
         formal_parameter_list -> formal_parameter
                                | formal_parameter `COMMA` formal_parameter_list
@@ -2261,13 +2337,7 @@ class Interpreter(NodeVisitor):
         original_left_value_name = type(left_value).__name__
         original_right_value_name = type(right_value).__name__
         
-        if op_str in ['+','-','/','*','//']:
-            
-            if isinstance(left_value, Bool):
-                left_value = left_value.to(Int)
-            
-            if isinstance(right_value, Bool):
-                right_value = right_value.to(Int)
+        if op_str in ['+','-','/','*','//','and','or','==','~=','>','<','>=','<=']:
             
             value = operand(op_str, left_value, right_value)
 
@@ -2280,25 +2350,6 @@ class Interpreter(NodeVisitor):
                 
             return value
         
-        elif op_str in ['and', 'or']:
-            
-            if not isinstance(left_value, Bool):
-                left_value = left_value.to(Bool)
-            
-            if not isinstance(right_value, Bool):
-                right_value = right_value.to(Bool)
-                
-            value = operand(op_str, left_value, right_value)
-            
-            if value is None:
-                self.error(
-                    error_code=ErrorCode.TYPE_ERROR,
-                    token=node.op,  # TODO: Extract proper token from problematic node
-                    message=f"Unsupported operation {repr(node.op.id)} between <{original_left_value_name}> and <{original_right_value_name}>, boolean operations must consist of values that are able to interpreted as a boolean."
-                )
-                
-            return value
-            
         else:
             log(f"Unkown operation {repr(node.op.type)}, illegal state", level=config.getint("logging.levels.CRITICAL"))
             exit()

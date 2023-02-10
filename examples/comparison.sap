@@ -1,0 +1,2 @@
+bool x = !(3 and 4) == False;
+bool y = 3 < 0 == False;
