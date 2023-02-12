@@ -26,7 +26,7 @@ ALL             = 5
 [dev]
 # If no file was specified in the arguments, use this instead
 # Overrides default cmdline behaviour
-default_filename  = "examples/comparison.sap"
+default_filename  = "examples/selection.sap"
 # This defines how errors are treated
 # If true, it will raise an error with the full stack trace,
 # useful for debugging purposes
@@ -36,4 +36,4 @@ raise_error_stack = false
 # are required after every statement
 # Non-strict semicolons are treated as statement separators
 # and are only required between statements
-strict_semicolons = true
+strict_semicolons = false

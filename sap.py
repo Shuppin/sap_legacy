@@ -22,8 +22,9 @@ from modules.builtin_types  import *
 # * Move type checker to semantic analyser?
 #   Attempted, will increase complexity with current solution, so maybe a future iteration
 #   - Mapping for binop in unop defining what datatypes are returned
+# * Add syntax warnings
 
-__version__ = "0.0.1-pre.41"
+__version__ = "0.0.1-pre.42"
 
 # Load config information first
 config_path = "config.toml"
@@ -1979,7 +1980,6 @@ class SemanticAnalyser(NodeVisitor):
         self.current_scope = global_scope
 
     def visit_Compound(self, node: Compound):
-        # TODO: Implement scoping around compound statements
         for child in node.children:
             self.visit(child)
 
@@ -2052,6 +2052,14 @@ class SemanticAnalyser(NodeVisitor):
 
         node.procedure_symbol = procedure_symbol
 
+    def visit_SelectionStatement(self, node: SelectionStatement):
+        for conditional in node.conditionals:
+            self.visit(conditional.condition)
+            self.visit(conditional.compound)
+            
+        if node.else_conditional is not None:
+            self.visit(node.else_conditional)
+    
     def visit_AssignOp(self, node: AssignOp):
         var_id = node.left.id
         var_symbol = self.current_scope.lookup(var_id)
@@ -2132,9 +2140,7 @@ class Interpreter(NodeVisitor):
 
     def interpret(self, tree: Node):
         """
-        Initiates the recursive descent algorithm,
-        generates a syntax tree,
-        and executes the code.
+        Initiates the recursive descent algorithm and executes the code.
         """
         return self.visit(tree)
     
@@ -2178,11 +2184,13 @@ class Interpreter(NodeVisitor):
         variable_id = node.var_node.id
         variable_type = node.type_node.token.id
 
+        # "_" is a place holder variable so we can ignore it
         if variable_id == "_":
             return
 
         current_ar = self.call_stack.peek()
 
+        # If the variable actually has an expression to evaluate and assign.
         if node.expr_node is not None:
             expression_value = self.visit(node.expr_node)
             
@@ -2211,6 +2219,7 @@ class Interpreter(NodeVisitor):
             )
             log(f"Interpreter: VarDecl <{variable_type.__name__}> {repr(variable_id)} = {expression_value}", level=LogLevel.HIGHLY_VERBOSE)
 
+        # Else just give the variable a NoneType value
         else:
             current_ar.set(
                 Member(
@@ -2221,28 +2230,36 @@ class Interpreter(NodeVisitor):
             log(f"Interpreter: VarDecl <{variable_type.__name__}> {repr(variable_id)} = NoneType()", level=LogLevel.HIGHLY_VERBOSE)
 
     def visit_ProcedureDecl(self, node):
+        # No code needed since all information we need
+        # about a procedure is stored in the symbol table.
+        # Funciton exists so that walking the tree does not error
         pass
 
     def visit_ProcedureCall(self, node: ProcedureCall):
         
-        # TODO: Add proper argument vs parameters checking
-        # i.e. Type comparison and length comparison
-        
         procedure_name = node.procedure_var.id
         log(f'Interpreter: calling procedure {repr(procedure_name)}', level=LogLevel.VERBOSE)
 
+        # Create the activation record for the procedure we are about to enter
         ar = ActivationRecord(
             name=procedure_name,
             ar_type=ActivationRecordType.PROCEDURE,
             nesting_level=node.procedure_symbol.scope_level + 1
         )
+        
         log(f"Interpreter: created AR", repr(ar.name), repr(ar), level=LogLevel.VERBOSE)
 
+        # TODO: Add proper argument vs parameters checking
+        # i.e. Type comparison and length comparison
+        
+        # Grab parameters from the procedure call and the procedure declaration
         formal_params = node.procedure_symbol.procedure_node.params
         literal_params = node.literal_params
 
         for formal_param, literal_param in zip(formal_params, literal_params):
+            # Evaluate each parameter in the procedure call
             param_value = self.visit(literal_param)
+            # Add it to the scope of the procedure we are about to enter
             ar.set(
                 Member(
                     name=formal_param.var_node.id,
@@ -2251,20 +2268,58 @@ class Interpreter(NodeVisitor):
             )
             log(f"Interpreter: ProcedureCall param <{formal_param.type_node.id}> {repr(formal_param.var_node.id)} = {repr(param_value)}", level=LogLevel.HIGHLY_VERBOSE)
 
+        # Push the new scope to the call stack
         self.call_stack.push(ar)
         log(f"Interpreter: pushed AR {repr(ar.name)} onto call stack", level=LogLevel.VERBOSE)
 
         log(f"Interpreter: executing procedure {repr(procedure_name)}", level=LogLevel.VERBOSE)
-        # Execute function
+        # Enter procedure
         self.visit(node.procedure_symbol.procedure_node.compound_node)
         log(f"Interpreter: execution complete for procedure {repr(procedure_name)}", level=LogLevel.VERBOSE)
 
+        # Log activation record
         log("Interpreter: ACTIVATION RECORD", repr(ar.name), level=LogLevel.HIGHLY_VERBOSE)
         log(str(ar), level=LogLevel.HIGHLY_VERBOSE, prefix_per_line=" |   ")
         log("Interpreter: ACTIVATION RECORD", repr(ar.name), "END", level=LogLevel.HIGHLY_VERBOSE)
 
+        # Once finished, remove the scope from the call stack and return to our original scope
         self.call_stack.pop()
         log(f"Interpreter: lifted AR {repr(ar.name)} from call stack", level=LogLevel.VERBOSE)
+
+    def visit_SelectionStatement(self, node: SelectionStatement):
+        
+        visted_conditional = False
+        
+        # Iterate through all the conditions (in order of appearance) and test if they're true.
+        for conditional in node.conditionals:
+            evaluated_value = self.visit(conditional.condition)
+            
+            if not isinstance(evaluated_value, Bool):
+                
+                # Attempt to parse to bool
+                evaluated_value = evaluated_value.to(Bool)
+                
+                if evaluated_value is None:
+                    # TODO (URGENT): Add multi-token error printing
+                    # Currently not an issue, sicne all datatypes can be parsed to bools
+                    # However may cause issues in future
+                    raise NotImplemented("uhh, i can't print this error, but you got a bad if statement")
+                    self.error(
+                        error_code=ErrorCode.TYPE_ERROR,
+                        token=Token(None, None, 0, 0),
+                        message=f"Could not parse expression to Bool"
+                    )
+            
+            # If the evaluated expression it true, execute it!
+            if evaluated_value.value == 1:
+                visted_conditional = True
+                self.visit(conditional.compound)
+                log(f"Interpreter: SelectionStatement selected if condition", level=LogLevel.HIGHLY_VERBOSE)
+                break
+            
+        if node.else_conditional is not None and not visted_conditional:
+            log(f"Interpreter: SelectionStatement selected else condition", level=LogLevel.HIGHLY_VERBOSE)
+            self.visit(node.else_conditional)
 
     def visit_AssignOp(self, node: AssignOp):
         current_ar = self.call_stack.peek()
@@ -2272,10 +2327,13 @@ class Interpreter(NodeVisitor):
         variable_id = node.left.id
         evaluated_value = self.visit(node.right)
         
+        # Used for error printing
+        original_value_name = type(evaluated_value).__name__
+        
         # Ensure type is correct
         if variable_type != type(evaluated_value) and variable_type != NoneType:
             
-            # Attempt to parse to another type
+            # Attempt to parse to expected type
             evaluated_value = evaluated_value.to(variable_type)
             
             # If that fails, error
@@ -2283,10 +2341,10 @@ class Interpreter(NodeVisitor):
                 self.error(
                     error_code=ErrorCode.TYPE_ERROR,
                     token=node.left,
-                    message=f"Attempted to assign value with type <{type(evaluated_value).__name__}> to var with incompatible type <{variable_type.__name__}>"
+                    message=f"Attempted to assign value with type <{original_value_name}> to var with incompatible type <{variable_type.__name__}>"
                 )
                 
-            # Else, continue on as normal
+        # Else, continue on as normal
                 
         # Update current variable on activation record
         current_ar.set(
@@ -2298,6 +2356,7 @@ class Interpreter(NodeVisitor):
         log(f"Interpreter: AssignOp <{variable_type.__name__}> {repr(variable_id)} = {evaluated_value}", level=LogLevel.HIGHLY_VERBOSE)
 
     def visit_UnaryOp(self, node: UnaryOp):
+        # Negate operation
         if node.op.type == TokenType.SUB:
             value = self.visit(node.expr)
             result = operand('-', value)
@@ -2311,6 +2370,7 @@ class Interpreter(NodeVisitor):
                 
             return result
         
+        # Boolean not operation
         elif node.op.type == TokenType.NOT:
             value = self.visit(node.expr)
             original_value_name = type(value).__name__
@@ -2330,29 +2390,22 @@ class Interpreter(NodeVisitor):
             return result
 
     def visit_BinOp(self, node: BinOp):
+        
         left_value = self.visit(node.left)
         right_value = self.visit(node.right)
+        
         op_str = node.op.id
-        
-        original_left_value_name = type(left_value).__name__
-        original_right_value_name = type(right_value).__name__
-        
-        if op_str in ['+','-','/','*','//','and','or','==','~=','>','<','>=','<=']:
             
-            value = operand(op_str, left_value, right_value)
+        value = operand(op_str, left_value, right_value)
 
-            if value is None:
-                self.error(
-                    error_code=ErrorCode.TYPE_ERROR,
-                    token=node.op,  # TODO: Extract proper token from problematic node
-                    message=f"Unsupported operation {repr(node.op.id)} between <{original_left_value_name}> and <{original_right_value_name}>"
-                )
-                
-            return value
-        
-        else:
-            log(f"Unkown operation {repr(node.op.type)}, illegal state", level=config.getint("logging.levels.CRITICAL"))
-            exit()
+        if value is None:
+            self.error(
+                error_code=ErrorCode.TYPE_ERROR,
+                token=node.op,  # TODO: Extract proper token (or group of tokens) from problematic node
+                message=f"Unsupported operation {repr(node.op.id)} between <{type(left_value).__name__}> and <{type(right_value).__name__}>"
+            )
+            
+        return value
 
     def visit_TypeNode(self, node: TypeNode):
         # Not utilised yet
@@ -2362,13 +2415,16 @@ class Interpreter(NodeVisitor):
         variable_id = node.id
         variable = self.call_stack.get(variable_id)
         if variable is None:
+            # The semantic analyser would miss this check if variables are
+            # defined in conditional statements (which is very bad practice)
             self.error(
                 error_code=ErrorCode.NAME_ERROR,
                 token=node.token,
-                message=f"Could not find {repr(variable_id)} in current frame"
+                message=f"Variable {repr(variable_id)} does not exist!"
             )
+        # Not sure if this states is even reachable
+        # since semantic analyser *should* catch errors like this
         elif variable.value is None:
-            # Not sure if this code is even reachable
             self.error(
                 error_code=ErrorCode.NAME_ERROR,
                 token=node.token,

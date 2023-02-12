@@ -4,6 +4,18 @@ Format: `[version] - DD-MM-YYYY`
 
 ## [0.0.1-pre.41] - 22-01-2023
 
+### Added
+
+- Selection is now fully implemented
+- A few comments in the interpreter
+
+### Changed
+
+- Slight logic rework on assign operations
+
+
+## [0.0.1-pre.41] - 22-01-2023
+
 ### Changed
 
 - Simplified binary operation code
