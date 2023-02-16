@@ -2,7 +2,35 @@
 Format: `[version] - DD-MM-YYYY`
 #
 
-## [0.0.1-pre.41] - 22-01-2023
+## [0.0.1-pre.43] - 16-02-2023
+
+Pretty big update here
+
+### Added
+
+- `while` statements
+- `inc` and `dec` statements
+- `loops.sap` to demonstrate while loops
+- `increments.sap` to demonstrate `inc` and `dec`
+- Quickly made skeleton code allowing the error printer to accept a list of tokens as an input. It's likely that this code is riddled with error so i'll update in the future since it's not needed for now
+- `get_nth_token()` method to `Node`, this function allows the code to search for a token in a Node and it's children. Useful for error printing
+
+### Changed
+
+- Fixed a major bug in `variable_assignment()` where a `Token` was being passed instead of a `VarNode`, causing the program to fail later on in `visit_AssignOp()` (Interpreter)
+- Fixed a major bug where program would crash if an expression passed into a selection statement couldn't be evaluated as a boolean
+- Some general code cleanup as per usual
+- Newlines now act as seperators, in other words, lines do not need to be followed by a semicolon anymore (Though you still can if you want to)
+- Replaced `def` keyword with `fn` because it looks to much like python lol
+- Minor changes to to lexer to corectly identify the position of operators which are longer than 1 character
+- Dates were all wrong in the changelog, fixed now
+
+### Removed
+
+- Old code which perfomed semicolon checks
+- Along with this, the `strict_semicolon` option in `config.py`
+
+## [0.0.1-pre.42] - 12-02-2023
 
 ### Added
 
@@ -13,8 +41,7 @@ Format: `[version] - DD-MM-YYYY`
 
 - Slight logic rework on assign operations
 
-
-## [0.0.1-pre.41] - 22-01-2023
+## [0.0.1-pre.41] - 10-02-2023
 
 ### Changed
 
@@ -24,7 +51,7 @@ Format: `[version] - DD-MM-YYYY`
 
 - Lexing & Parsing for if, elseif and else statements (Testing still needs to be done)
 
-## [0.0.1-pre.40] - 22-01-2023
+## [0.0.1-pre.40] - 08-02-2023
 
 ### Changed
 
@@ -36,7 +63,7 @@ Format: `[version] - DD-MM-YYYY`
 
 - `overloading.py` module no longer used, moved to `SAP/other`
 
-## [0.0.1-pre.39] - 22-01-2023
+## [0.0.1-pre.39] - 30-01-2023
 
 ### Added
 
@@ -46,13 +73,13 @@ Format: `[version] - DD-MM-YYYY`
 
 - `syntax_showcase.sap` & `procedure_calls.sap` now execute fully
 
-## [0.0.1-pre.38] - 22-01-2023
+## [0.0.1-pre.38] - 30-01-2023
 
 ### Added
 
 - Comparison operators parsing (need to update interpreter)
 
-## [0.0.1-pre.37] - 22-01-2023
+## [0.0.1-pre.37] - 26-01-2023
 
 ### Changes
 
@@ -63,7 +90,7 @@ Format: `[version] - DD-MM-YYYY`
 
 - Format information to changelog file
 
-## [0.0.1-pre.36] - 22-01-2023
+## [0.0.1-pre.36] - 25-01-2023
 
 ### Added
 
@@ -74,7 +101,7 @@ Format: `[version] - DD-MM-YYYY`
 - Minor bug fixes & code clean up
 
 
-## [0.0.1-pre.35] - 22-01-2023
+## [0.0.1-pre.35] - 25-01-2023
 
 ### Added
 

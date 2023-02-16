@@ -121,8 +121,7 @@ class ConfigParser:
             (self.getint,  "logging.levels.ALL"),
             
             (self.getstr,  "dev.default_filename"),
-            (self.getbool, "dev.raise_error_stack"),
-            (self.getbool, "dev.strict_semicolons"),
+            (self.getbool, "dev.raise_error_stack")
         )
         
         for get_function, path in checks:

@@ -1,9 +1,9 @@
-def println(int std_out_code, float e) {
+fn println(int std_out_code, float e) {
     // dummy function to represent printing
     int x = 5 + std_out_code;
 };
 
-def main() -> int {
+fn main() -> int {
     println(5, 1.1);
 };
 

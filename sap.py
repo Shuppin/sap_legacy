@@ -23,8 +23,9 @@ from modules.builtin_types  import *
 #   Attempted, will increase complexity with current solution, so maybe a future iteration
 #   - Mapping for binop in unop defining what datatypes are returned
 # * Add syntax warnings
+# * Add built-in procedure framework
 
-__version__ = "0.0.1-pre.42"
+__version__ = "0.0.1-pre.43"
 
 # Load config information first
 config_path = "config.toml"
@@ -57,7 +58,7 @@ class TokenType(Enum):
     LPAREN          = '('
     RPAREN          = ')'
     ASSIGN          = '='
-    SEMI            = ';'
+    SEP             = ';'  # Note, newline characters are also treated as seperators
     COLON           = ':'
     COMMA           = ','
     BEGIN           = '{'
@@ -69,12 +70,15 @@ class TokenType(Enum):
     MORE            = '>'
     MOREEQ          = ">="
     # reserved keywords
-    DEFINITION      = 'def'
+    DEFINITION      = 'fn'
     INTEGER         = 'int'
     FLOAT           = 'float'
     BOOLEAN         = 'bool'
     AND             = 'and'
     OR              = 'or'
+    INCREMENT       = 'dec'
+    DECREMENT       = 'inc'
+    WHILE           = 'while'
     IF              = 'if'
     ELSEIF          = 'elseif'
     ELSE            = 'else'
@@ -176,29 +180,61 @@ class BaseError(Exception):
             self,
             error_code: ErrorCode,
             message: str,
-            token: Token = None,
+            token: Token | list[Token] | None = None,
             position: list[int] = None,
             surrounding_lines: list[str] = None
     ):
         self.error_code: ErrorCode = error_code
         self.message: str = f'{self.__class__.__name__[:-5]} :: {self.error_code.value}: {message}'
-        self.token: Token | None = token
+        self.token: Token | list[Token] | None= token
         self.surrounding_lines: list[str] | None = surrounding_lines
         # We need the position at which the error occurred,
         # It is either extracted from a given token or
         # passed directly as an array
         self.lineno: int
         self.linecol: int
-        if token is not None and position is None:
-            self.lineno = token.lineno
-            self.linecol = token.linecol
-        elif position is not None and token is None:
-            self.lineno = position[0]
-            self.linecol = position[1]
-        elif token is not None and position is not None:
-            raise ValueError("Too much information passed into Error, either token or position must be given, not both")
+        
+        # Awful hacky code up ahead, you have been warned
+        if isinstance(token, list):
+            # Sort tokens by line number, then by column
+            tokens = sorted(
+                token,
+                key = lambda token: (token.lineno, token.linecol)
+            )
+            self.lineno = tokens[-1].lineno
+            self.linecol = tokens[-1].linecol
+            
+            # Filter out all tokens not on the same line, then select the first token in this new list
+            first_token_on_same_line = list(
+                filter(
+                    lambda token: token.lineno == self.lineno,
+                    tokens
+                )
+            )[0]
+            
+            # Access the start column if it exists,
+            # otherwise grab the linecol and subtract the length of the token to achieve the same value
+            start_col = first_token_on_same_line.startcol or first_token_on_same_line.linecol - len(first_token_on_same_line.id)
+            
+            self.token = Token(
+                None,
+                None,
+                None,
+                None,
+                start_col
+            )
+        
         else:
-            raise ValueError("Not enough information passed into Error, either token or position must be given")
+            if token is not None and position is None:
+                self.lineno = token.lineno
+                self.linecol = token.linecol
+            elif position is not None and token is None:
+                self.lineno = position[0]
+                self.linecol = position[1]
+            elif token is not None and position is not None:
+                raise ValueError("Too much information passed into Error, either token or position must be given, not both")
+            else:
+                raise ValueError("Not enough information passed into Error, either token or position must be given")
         log(f"{type(self).__name__}.__init__() complete", stackoffset=1)
 
     def trigger(self):
@@ -369,7 +405,53 @@ class Node:
             text += ")"
 
         return text
+    
+    def _get_sub_tokens(self) -> list[Token]:
+        tokens = []
+        # Access the dir() of self and filter out any dunder (double under score e.g. '__init__') attributes
+        # and anything that is not callable (i.e. methods)
+        # Then, get the instance of those values and store them
+        self_attributes = [getattr(self, a) for a in dir(self) if not a.startswith('__') and not callable(getattr(self, a))]
+        
+        # Go through attributes
+        for attr in self_attributes:
+            
+            # Add any tokens we see
+            if isinstance(attr, Token):
+                tokens.append(attr)
+            
+            # Recursively explore any nodes we see
+            elif issubclass(type(attr), Node):
+                tokens += attr._get_sub_tokens()
+                
+            # A few nodes have lists, for now they are all one-dimensional
+            # so this nested code should suffice
+            elif isinstance(attr, list):
+                
+                for child in attr:
+                    if isinstance(child, Token):
+                        tokens.append(child)
+                    elif issubclass(type(child), Node):
+                        tokens += child._get_sub_tokens()
+                
+        return tokens
 
+    def find_nth_token(self, n) -> Token:
+        """
+        Searches through all the tokens in this node and it's children
+        then sorts it into order and return the `n`th item in that list
+        """
+        tokens = self._get_sub_tokens()
+        # sort by line number, then line column
+        tokens = sorted(
+            tokens,
+            key=lambda token: (token.lineno, token.linecol)
+        )
+        try:
+            return tokens[n]
+        except IndexError:
+            return None
+                
 
 class InteriorNode(Node):
     """
@@ -407,7 +489,13 @@ class VarDecl(InteriorNode):
     """
     VarDecl() represents a variable declaration statement
     """
-    def __init__(self, type_node, var_node, assign_op=None, expr_node=None):
+    def __init__(
+        self,
+        type_node: TypeNode,
+        var_node: VarNode,
+        assign_op: Token = None,
+        expr_node: Node = None
+    ):
         self.type_node: TypeNode = type_node
         self.var_node: VarNode = var_node
         self.assign_op: Token | None = assign_op
@@ -418,7 +506,13 @@ class ProcedureDecl(InteriorNode):
     """
     ProcedureDecl() represents a procedure declaration statement
     """
-    def __init__(self, procedure_var, params, compound_node, return_type=None):
+    def __init__(
+        self,
+        procedure_var: VarNode,
+        params: list[Param],
+        compound_node: Compound,
+        return_type: TypeNode = None
+    ):
         self.procedure_var: VarNode = procedure_var
         self.params: list[Param] = params
         self.return_type: TypeNode | None = return_type
@@ -429,10 +523,19 @@ class ProcedureCall(InteriorNode):
     """
     ProcedureCall() represents a procedure call statement
     """
-    def __init__(self, procedure_var, literal_params):
+    def __init__(self, procedure_var: VarNode, literal_params: list[Param]):
         self.procedure_var: VarNode = procedure_var
         self.literal_params: list[Param] = literal_params
         self.procedure_symbol: ProcedureSymbol | None = None
+
+
+class WhileStatement(InteriorNode):
+    """
+    WhileStatement() represents a while loop statement
+    """
+    def __init__(self, condition: Node, compound: Compound):
+        self.condition: Node = condition
+        self.compound: Compound = compound
 
 
 class SelectionStatement(InteriorNode):
@@ -444,12 +547,21 @@ class SelectionStatement(InteriorNode):
         self.else_conditional: Compound = else_conditional
 
 
+class IncrementalStatement(InteriorNode):
+    """
+    IncrementalStatement() represent a increment or decrement operation
+    """
+    def __init__(self, op, var):
+        self.op: TokenType = op
+        self.var: VarNode = var
+
+
 class AssignOp(InteriorNode):
     """
     AssignOp() represents an assignment operation
     """
     def __init__(self, left, op, right):
-        self.left: Token = left
+        self.left: VarNode = left
         self.op: Token = op
         self.right: Node = right
 
@@ -458,7 +570,7 @@ class UnaryOp(InteriorNode):
     """
     UnaryOp() represents a unary operation (one-sided operation) such as `-1`
     """
-    def __init__(self, op, expr):
+    def __init__(self, op: Token, expr: Node):
         self.op: Token = op
         self.expr: Node = expr
 
@@ -467,7 +579,7 @@ class BinOp(InteriorNode):
     """
     BinOp() represents a binary operation (two-sided operation) such as `1+2`
     """
-    def __init__(self, left, op, right):
+    def __init__(self, left: Node, op: Token, right: Node):
         self.left: Node = left
         self.op: Token = op
         self.right: Node = right
@@ -477,7 +589,7 @@ class Param(InteriorNode):
     """
     Param() represents a parameter within a procedure declaration
     """
-    def __init__(self, var_node, type_node):
+    def __init__(self, var_node: VarNode, type_node: TypeNode):
         self.var_node: VarNode = var_node
         self.type_node: TypeNode = type_node
 
@@ -486,7 +598,7 @@ class Conditional(InteriorNode):
     """
     Conditional() represents an if, elseif or else statement
     """
-    def __init__(self, condition, compound) -> None:
+    def __init__(self, condition: Node, compound: Compound):
         self.condition: Node = condition
         self.compound: Compound = compound
 
@@ -504,8 +616,7 @@ class TypeNode(LeafNode):
     """
     TypeNode() represents a data type literal
     """
-    def __init__(self, token):
-        super().__init__(token)
+    def __init__(self, token: Token):
         self.token: Token = token
         self.id: int | str | None | Type = self.token.type
 
@@ -514,8 +625,7 @@ class VarNode(LeafNode):
     """
     VarNode() represents a variable
     """
-    def __init__(self, token):
-        super().__init__(token)
+    def __init__(self, token: Token):
         self.token: Token = token
         self.id: int | str | None | Type = self.token.id
 
@@ -524,8 +634,7 @@ class NumNode(LeafNode):
     """
     NumNode() represents any number-like literal such as `23` or `3.14`
     """
-    def __init__(self, token):
-        super().__init__(token)
+    def __init__(self, token: Token):
         self.token: Token = token
         self.id: int | str | None | Type = self.token.id
 
@@ -534,8 +643,7 @@ class BoolNode(LeafNode):
     """
     BoolNode() represents boolean literals `True` and `False`
     """
-    def __init__(self, token):
-        super().__init__(token)
+    def __init__(self, token: Token):
         self.token: Token = token
         self.id: int | str | None | Type = self.token.id
 
@@ -920,13 +1028,16 @@ class Lexer:
         # of the code
         self.reached_end_counter = 0
 
-        self.RESERVED_KEYWORDS: dict[str, tuple[TokenType, Type | None]] = {
-            'def'       :   (TokenType.DEFINITION, 'def'),
+        self.RESERVED_KEYWORDS: dict[str, tuple[TokenType, Any]] = {
+            'fn'       :   (TokenType.DEFINITION, 'fn'),
+            'while'     :   (TokenType.WHILE, 'while'),
             'if'        :   (TokenType.IF, 'if'),
             'elseif'    :   (TokenType.ELSEIF, 'elseif'),
             'else'      :   (TokenType.ELSE, 'else'),
             'and'       :   (TokenType.AND, 'and'),
             'or'        :   (TokenType.OR, 'or'),
+            'inc'       :   (TokenType.INCREMENT, 'inc'),
+            'dec'       :   (TokenType.DECREMENT, 'dec'),
             'int'       :   (TokenType.INTEGER, Int),
             'float'     :   (TokenType.FLOAT, Float),
             'bool'      :   (TokenType.BOOLEAN, Bool),
@@ -1091,12 +1202,15 @@ class Lexer:
         tokens out of code.
         """
         while self.current_char is not None:
+            
+            # Special
+            
+            if self.current_char == ";" or self.current_char == "\n":
+                token = Token(TokenType.SEP, self.current_char, self.lineno, self.linecol)
+                self.advance()
+                return token
 
             # Ignored characters
-
-            if self.current_char == "\n":
-                self.advance()
-                continue
 
             elif self.current_char == " ":
                 self.skip_whitespace()
@@ -1122,7 +1236,7 @@ class Lexer:
 
             elif self.current_char == "=":
                 if self.peek() == "=":
-                    token = Token(TokenType.EQUAL, '==', self.lineno, self.linecol)
+                    token = Token(TokenType.EQUAL, '==', self.lineno, self.linecol+2, startcol=self.linecol)
                     self.advance()
                 else:
                     token = Token(TokenType.ASSIGN, '=', self.lineno, self.linecol)
@@ -1154,13 +1268,11 @@ class Lexer:
 
             elif self.current_char == '-':
                 if self.peek() == ">":
-                    token = Token(TokenType.RETURNS_OP, "->", self.lineno, self.linecol)
-                    self.advance()
+                    token = Token(TokenType.RETURNS_OP, "->", self.lineno, self.linecol+2, startcol=self.linecol)
                     self.advance()
                 else:
                     token = Token(TokenType.SUB, self.current_char, self.lineno, self.linecol)
-                    self.advance()
-
+                self.advance()
                 return token
 
             elif self.current_char == '!':
@@ -1170,14 +1282,14 @@ class Lexer:
             
             elif self.current_char == '~':
                 if self.peek() == '=':
-                    token = Token(TokenType.INEQUAL, '~=', self.lineno, self.linecol)
+                    token = Token(TokenType.INEQUAL, '~=', self.lineno, self.linecol+2, startcol=self.linecol)
                     self.advance()
                     self.advance()
                     return token
 
             elif self.current_char == "<":
                 if self.peek() == "=":
-                    token = Token(TokenType.LESSEQ, "<=", self.lineno, self.linecol)
+                    token = Token(TokenType.LESSEQ, "<=", self.lineno,self.linecol+2, startcol=self.linecol)
                     self.advance()
                 else:
                     token = Token(TokenType.LESS, "<", self.lineno, self.linecol)
@@ -1186,7 +1298,7 @@ class Lexer:
 
             elif self.current_char == ">":
                 if self.peek() == "=":
-                    token = Token(TokenType.MOREEQ, ">=", self.lineno, self.linecol)
+                    token = Token(TokenType.MOREEQ, ">=", self.lineno, self.linecol+2, startcol=self.linecol)
                     self.advance()
                 else:
                     token = Token(TokenType.MORE, ">", self.lineno, self.linecol)
@@ -1194,11 +1306,6 @@ class Lexer:
                 return token
 
             # Symbols
-
-            elif self.current_char == ";":
-                token = Token(TokenType.SEMI, self.current_char, self.lineno, self.linecol)
-                self.advance()
-                return token
 
             elif self.current_char == ":":
                 token = Token(TokenType.COLON, self.current_char, self.lineno, self.linecol)
@@ -1312,7 +1419,7 @@ class Parser:
                     token=self.current_token,
                     message=f"Unexpected type <{self.current_token.type.name}>"
                 )
-            elif expected_type == TokenType.SEMI:
+            elif expected_type == TokenType.SEP:
                 self.error(
                     error_code=ErrorCode.SYNTAX_ERROR,
                     token=self.current_token,
@@ -1339,37 +1446,6 @@ class Parser:
         else:
             return False
 
-    def semicolon_check(self, statement):
-        """
-        Specific error handling due to weird no-op behaviour
-
-        Specifically, it checks the following:
-        - Multiple semicolons next to each other
-        - Missing semicolons after compound statements
-        - Missing semicolons after procedure declarations
-        - Missing semicolons after any other statement
-
-        Note: compounds and procedures are handled separately for more accurate error reporting
-        """
-        if isinstance(statement, NoOp) and self.current_token.type == TokenType.SEMI:
-            self.error(
-                error_code=ErrorCode.SYNTAX_ERROR,
-                token=self.current_token,
-                message="Semicolon separates an empty statement"
-            )
-        elif isinstance(statement, ProcedureDecl) and self.current_token.type != TokenType.SEMI:
-            self.error(
-                error_code=ErrorCode.SYNTAX_ERROR,
-                token=self.previous_token,
-                message="Expected semicolon after procedure"
-            )
-        elif (not isinstance(statement, NoOp)) and self.current_token.type != TokenType.SEMI:
-            self.error(
-                error_code=ErrorCode.SYNTAX_ERROR,
-                token=self.previous_token,
-                message=f"Invalid syntax, perhaps you forgot a semicolon?"
-            )
-
     # Grammar definitions
 
     def program(self) -> Program:
@@ -1391,16 +1467,12 @@ class Parser:
                         | statement `SEMI` statement_list
         """
         node = self.statement()
-        if config.getbool("dev.strict_semicolons"):
-            self.semicolon_check(node)
 
         results = [node]
 
-        while self.current_token.type == TokenType.SEMI:
-            self.eat(TokenType.SEMI)
+        while self.current_token.type == TokenType.SEP:
+            self.eat(TokenType.SEP)
             statement = self.statement()
-            if config.getbool("dev.strict_semicolons"):
-                self.semicolon_check(statement)
             results.append(statement)
 
         log(f"Parser: created list[Node]({len(results)}) <{self.current_token.lineno}:{self.current_token.linecol}> in {getframeinfo(currentframe()).function}()", level=LogLevel.ALL)
@@ -1413,23 +1485,30 @@ class Parser:
                    | procedure_call
                    | variable_declaration
                    | variable_assignment
-                   | conditional_statement
+                   | while_statement
+                   | selection_statement
+                   | incremental_statement
                    | empty
         """
-        if self.current_token.type == TokenType.BEGIN:
+        token = self.current_token.type
+        if token == TokenType.BEGIN:
             node = self.compound_statement()
-        elif self.current_token.type == TokenType.DEFINITION:
+        elif token == TokenType.DEFINITION:
             node = self.procedure_declaration()
         elif self.is_type():
             node = self.variable_declaration()
-        elif self.current_token.type == TokenType.IDENTIFIER:
+        elif token == TokenType.IDENTIFIER:
             assert len(TokenType.LPAREN.value) == 1  # Assert that `LPAREN` is a single character symbol
             if self.lexer.current_char == TokenType.LPAREN.value:
                 node = self.procedure_call()
             else:
                 node = self.variable_assignment()
-        elif self.current_token.type == TokenType.IF:
-            node = self.conditional_statement()
+        elif token == TokenType.WHILE:
+            node = self.while_statement()
+        elif token == TokenType.IF:
+            node = self.selection_statement()
+        elif token == TokenType.INCREMENT or token == TokenType.DECREMENT:
+            node = self.incremental_statement()
         else:
             node = self.empty()
         log(f"Parser: created {node.__class__.__name__}() <{self.current_token.lineno}:{self.current_token.linecol}> in {getframeinfo(currentframe()).function}()", level=LogLevel.ALL)
@@ -1541,7 +1620,7 @@ class Parser:
             node = VarDecl(type_node, var_node, assign_op, expr_node)
 
         # type_spec variable 
-        elif self.current_token.type == TokenType.SEMI:
+        elif self.current_token.type == TokenType.SEP:
             node = VarDecl(type_node, var_node)
 
         # type_spec variable (`COMMA` variable)*
@@ -1578,7 +1657,7 @@ class Parser:
         """
         variable_assignment -> variable `ASSIGN` expr
         """
-        var_node = self.current_token
+        var_node = VarNode(self.current_token)
         self.eat(TokenType.IDENTIFIER)
 
         assign_op = self.current_token
@@ -1590,10 +1669,20 @@ class Parser:
         log(f"Parser: created {node.__class__.__name__}() <{self.current_token.lineno}:{self.current_token.linecol}> in {getframeinfo(currentframe()).function}()", level=LogLevel.ALL)
         return node
 
-    def conditional_statement(self) -> SelectionStatement:
+    def while_statement(self) -> WhileStatement:
         """
-        conditional_statement -> `IF` expr compound_statement (`ELSEIF` expr compound_statement)*
-                               | `IF` expr compound_statement (`ELSEIF` expr compound_statement)* `ELSE` expr compound_statement
+        while_statement -> `WHILE` expr compound_statment
+        """
+        self.eat(TokenType.WHILE)
+        return WhileStatement(
+            condition=self.expr(),
+            compound=self.compound_statement()
+        )
+
+    def selection_statement(self) -> SelectionStatement:
+        """
+        selection_statement -> `IF` expr compound_statement (`ELSEIF` expr compound_statement)*
+                             | `IF` expr compound_statement (`ELSEIF` expr compound_statement)* `ELSE` expr compound_statement
         """
         # `IF` expr compound_statement
         self.eat(TokenType.IF)
@@ -1632,6 +1721,45 @@ class Parser:
         return SelectionStatement(
             conditionals=conditionals,
             else_conditional=else_conditional
+        )
+
+    def incremental_statement(self) -> IncrementalStatement:
+        """
+        incremental_statement -> (`INCREMENT` | `DECREMENT`) variable
+        """
+        op = self.current_token.type
+        if op == TokenType.INCREMENT:
+            self.eat(TokenType.INCREMENT)
+        elif op == TokenType.DECREMENT:
+            self.eat(TokenType.DECREMENT)
+            
+        var = self.current_token
+        
+        # Make sure the next token is actually a variable
+        if var.type != TokenType.IDENTIFIER:
+            self.error(
+                error_code=ErrorCode.SYNTAX_ERROR,
+                token=self.current_token,
+                message=f"Can only {'increment' if op==TokenType.INCREMENT else 'decrement'} values on numerical-like variables"
+            )
+        
+        # Eat token
+        self.eat(TokenType.IDENTIFIER)
+        
+        # If the next token isn't a statement termination token,
+        # then the variable is just the first component of an expression, which is not what we want.
+        
+        #                                 Statement termination tokens
+        if self.current_token.type not in [TokenType.END, TokenType.SEP, TokenType.EOF]:
+            self.error(
+                error_code=ErrorCode.SYNTAX_ERROR,
+                token=self.current_token,
+                message=f"Unexpected <{self.current_token.type.name}>, can only {'increment' if op==TokenType.INCREMENT else 'decrement'} values on numerical-like variables"
+            )
+        
+        return IncrementalStatement(
+            op=op,
+            var=VarNode(var)
         )
 
     def formal_parameter_list(self) -> list[Param]:
@@ -1870,7 +1998,9 @@ class Parser:
                    | procedure_call
                    | variable_declaration
                    | variable_assignment
-                   | conditional_statement
+                   | while_statement
+                   | selection_statement
+                   | incremental_statement
                    | empty
 
         compound_statement -> `BEGIN` statement_list `END`
@@ -1885,8 +2015,12 @@ class Parser:
 
         variable_assignment -> variable `ASSIGN` expr
 
-        conditional_statement -> `IF` expr compound_statement (`ELSEIF` expr compound_statement)*
-                               | `IF` expr compound_statement (`ELSEIF` expr compound_statement)* `ELSE` expr compound_statement
+        while_statement -> `WHILE` expr compound_statement
+
+        selection_statement -> `IF` expr compound_statement (`ELSEIF` expr compound_statement)*
+                             | `IF` expr compound_statement (`ELSEIF` expr compound_statement)* `ELSE` expr compound_statement
+
+        incremental_statement -> (`INCREMENT` | `DECREMENT`) variable
 
         formal_parameter_list -> formal_parameter
                                | formal_parameter `COMMA` formal_parameter_list
@@ -2052,6 +2186,10 @@ class SemanticAnalyser(NodeVisitor):
 
         node.procedure_symbol = procedure_symbol
 
+    def visit_WhileStatement(self, node: WhileStatement):
+        self.visit(node.condition)
+        self.visit(node.compound)
+
     def visit_SelectionStatement(self, node: SelectionStatement):
         for conditional in node.conditionals:
             self.visit(conditional.condition)
@@ -2059,6 +2197,9 @@ class SemanticAnalyser(NodeVisitor):
             
         if node.else_conditional is not None:
             self.visit(node.else_conditional)
+    
+    def visit_IncrementalStatement(self, node: IncrementalStatement):
+        self.visit(node.var)
     
     def visit_AssignOp(self, node: AssignOp):
         var_id = node.left.id
@@ -2286,6 +2427,33 @@ class Interpreter(NodeVisitor):
         self.call_stack.pop()
         log(f"Interpreter: lifted AR {repr(ar.name)} from call stack", level=LogLevel.VERBOSE)
 
+    def visit_WhileStatement(self, node: WhileStatement):
+        def eval_condition():
+            evaluated_value = self.visit(node.condition)
+        
+            # Parse code
+            if not isinstance(evaluated_value, Bool):
+                # Attempt to parse to bool
+                evaluated_value = evaluated_value.to(Bool)
+                
+                # If this returns None, the parse has failed, so error
+                if evaluated_value is None:
+                    self.error(
+                        error_code=ErrorCode.TYPE_ERROR,
+                        token=node.condition.find_nth_token(0),
+                        message=f"Could not parse expression to Bool"
+                    )
+            
+            # If the value is equal to 1, then the condition is True
+            if evaluated_value.value == 1:
+                return True
+            
+            return False
+        
+        # Interpreted languages written in interpeted languages are so funny
+        while eval_condition():
+            self.visit(node.compound)
+
     def visit_SelectionStatement(self, node: SelectionStatement):
         
         visted_conditional = False
@@ -2300,13 +2468,9 @@ class Interpreter(NodeVisitor):
                 evaluated_value = evaluated_value.to(Bool)
                 
                 if evaluated_value is None:
-                    # TODO (URGENT): Add multi-token error printing
-                    # Currently not an issue, sicne all datatypes can be parsed to bools
-                    # However may cause issues in future
-                    raise NotImplemented("uhh, i can't print this error, but you got a bad if statement")
                     self.error(
                         error_code=ErrorCode.TYPE_ERROR,
-                        token=Token(None, None, 0, 0),
+                        token=conditional.condition.find_nth_token(0),
                         message=f"Could not parse expression to Bool"
                     )
             
@@ -2321,9 +2485,52 @@ class Interpreter(NodeVisitor):
             log(f"Interpreter: SelectionStatement selected else condition", level=LogLevel.HIGHLY_VERBOSE)
             self.visit(node.else_conditional)
 
+    def visit_IncrementalStatement(self, node: IncrementalStatement):
+        # Decide what operator to pass in operand()
+        op_str = '+' if node.op == TokenType.INCREMENT else '-'
+        
+        # Get the value of the variable
+        original_value = self.visit(node.var)
+        
+        # Perform the operation on it
+        value = operand(op_str, original_value, Int(1))
+        
+        # If this returns none, the operation was between invalid datatypes, so error
+        if value is None:
+            self.error(
+                error_code=ErrorCode.TYPE_ERROR,
+                token=node.var.token,
+                message=f"Cannot {'increment' if node.op==TokenType.INCREMENT else 'decrement'} variable of type {original_value.__class__.__name__}"
+            )
+        
+        # If the type of the new value doesn't match the type of the old value,
+        # attempt to parse it back to the oriognal value
+        if type(original_value) != type(value):
+            value = value.to(type(original_value))
+            
+            # Not sure if this code is reachable
+            if value is None:
+                self.error(
+                    error_code=ErrorCode.TYPE_ERROR,
+                    token=node.var.token,
+                    message=f"Could not parse {repr(node.var.id)} back to original type after {'incrementing' if node.op==TokenType.INCREMENT else 'decrementing'}"
+                )
+        
+        # Access the current record
+        current_ar = self.call_stack.peek()
+        
+        # Update current variable on activation record
+        current_ar.set(
+            Member(
+                node.var.id,
+                value
+            )
+        )
+
     def visit_AssignOp(self, node: AssignOp):
         current_ar = self.call_stack.peek()
-        variable_type = type(current_ar.get(node.left.id).value)
+        variable = self.visit(node.left)
+        variable_type = type(variable)
         variable_id = node.left.id
         evaluated_value = self.visit(node.right)
         
@@ -2383,7 +2590,7 @@ class Interpreter(NodeVisitor):
             if result is None:
                 self.error(
                     error_code=ErrorCode.TYPE_ERROR,
-                    token=node.op,  # TODO: Extract proper token from problematic node
+                    token=node.op,
                     message=f"Unsupported operation {repr(node.op.id)} for type <{original_value_name}>"
                 )
                 
@@ -2401,7 +2608,7 @@ class Interpreter(NodeVisitor):
         if value is None:
             self.error(
                 error_code=ErrorCode.TYPE_ERROR,
-                token=node.op,  # TODO: Extract proper token (or group of tokens) from problematic node
+                token=node.op,
                 message=f"Unsupported operation {repr(node.op.id)} between <{type(left_value).__name__}> and <{type(right_value).__name__}>"
             )
             

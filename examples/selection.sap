@@ -1,20 +1,13 @@
-int x = 4;
-int y;
-int z;
+int x = 4
+int y = 10
+int z
 
 if x > 4 {
-    y = 1;
+    inc y
 }
 elseif x > 3 {
-    y = 2;
+    dec y
 }
 else {
-    y = 3;
-};
-
-if 1+1==2 {
-    z = 4;
-    // Example of bad code:
-    // int z = 4;
-    // We shouldn't declare variables inside of conditionals
-};
+    y = 0
+}

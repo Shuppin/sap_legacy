@@ -1,0 +1,8 @@
+int x = 10
+int y = 0
+
+while x > 0 {
+    dec x
+    inc y
+    inc y
+}

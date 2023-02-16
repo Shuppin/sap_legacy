@@ -43,14 +43,14 @@ x = ----x; // Unary operations are stackable
 };
 
 // Functions
-def AlphaA(int a) {
+fn AlphaA(int a) {
     int b = 4;
 
     // Nested functions
-    def Beta(int c) {
+    fn Beta(int c) {
         int x = 3;
 
-        def Gamma(int c) {
+        fn Gamma(int c) {
             int x = 9;
             x = a + b + c + x + y + z;
         };
@@ -62,13 +62,13 @@ def AlphaA(int a) {
 };
 
 // Function with return type
-def AlphaB(int a) -> int {
+fn AlphaB(int a) -> int {
     float c;
     c = a + b;
 };
 
 // Function without arguments
-def empty_func(int f) {
+fn empty_func(int f) {
     int y = 5;
 };
 
@@ -90,12 +90,12 @@ AlphaA(3);
 // Potential future syntax
 
 /* op functions
-    def op my_operator(int left, int right) -> int {
+    fn op my_operator(int left, int right) -> int {
         int result = (left*right) + (left/right);
         return result;
     };
 
-    def op convolve(int[] left, int[] right) {
+    fn op convolve(int[] left, int[] right) {
         ...
     };
 
