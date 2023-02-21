@@ -24,8 +24,9 @@ from modules.builtin_types  import *
 #   - Mapping for binop in unop defining what datatypes are returned
 # * Add syntax warnings
 # * Add built-in procedure framework
+#   - Whole module framework?
 
-__version__ = "0.0.1-pre.43"
+__version__ = "0.0.1-pre.44"
 
 # Load config information first
 config_path = "config.toml"
@@ -58,7 +59,6 @@ class TokenType(Enum):
     LPAREN          = '('
     RPAREN          = ')'
     ASSIGN          = '='
-    SEP             = ';'  # Note, newline characters are also treated as seperators
     COLON           = ':'
     COMMA           = ','
     BEGIN           = '{'
@@ -74,6 +74,7 @@ class TokenType(Enum):
     INTEGER         = 'int'
     FLOAT           = 'float'
     BOOLEAN         = 'bool'
+    STRING          = 'string'
     AND             = 'and'
     OR              = 'or'
     INCREMENT       = 'dec'
@@ -83,6 +84,8 @@ class TokenType(Enum):
     ELSEIF          = 'elseif'
     ELSE            = 'else'
     # dynamic token types
+    SEP             = 'SEP'  # Note, newline characters are also treated as seperators
+    STRING_LITERAL  = 'STRING_LITERAL'
     INTEGER_LITERAL = 'INTEGER_LITERAL'
     FLOAT_LITERAL   = 'FLOAT_LITERAL'
     BOOLEAN_LITERAL = 'BOOLEAN_LITERAL'
@@ -648,6 +651,15 @@ class BoolNode(LeafNode):
         self.id: int | str | None | Type = self.token.id
 
 
+class StringNode(LeafNode):
+    """
+    StringNode() represents string literals like "abcdef" and "Hello world"
+    """
+    def __init__(self, token: Token):
+        self.token: Token = token
+        self.id: int | str | None | Type = self.token.id
+    
+
 ###########################################
 #                                         #
 #   Symbols                               #
@@ -660,37 +672,43 @@ class BaseSymbol:
 
     Symbols are the component which makes up a symbol table
     """
-    def __init__(self, name, datatype=None):
-        if datatype is None:
-            datatype = NoneType
-        self.name: str = name
-        self.type: Type = datatype
+    def __init__(self, id):
+        self.id = id
         self.scope_level = 0
 
     def __str__(self) -> str:
         return self.name
 
 
-class BuiltinSymbol(BaseSymbol):
+class BuiltinTypeSymbol(BaseSymbol):
     """
     Symbol which represents built in types
     """
-    def __init__(self, name):
-        super().__init__(name)
+    def __init__(self, ref):
+        super().__init__(ref)
 
     def __str__(self) -> str:
-        return f"<builtin> {self.name}"
+        return f"<builtin> {self.id}"
+
+
+class BuiltinProcedureSymbol(BaseSymbol):
+    def __init__(self, callable):
+        super().__init__(callable)
+        self.callable = callable
+        
+    def __str__(self) -> str:
+        return f"<builtin-proc> {self.callable}"
 
 
 class VarSymbol(BaseSymbol):
     """
     Symbol which represents user-defined variables
     """
-    def __init__(self, name, datatype):
-        super().__init__(name, datatype)
+    def __init__(self, id):
+        super().__init__(id)
 
     def __str__(self) -> str:
-        return f"<variable> (id: {repr(self.name)}, type: {repr(self.type.name)})"
+        return f"<variable> (id: {repr(self.id)})"
 
 
 class ProcedureSymbol(BaseSymbol):
@@ -703,7 +721,7 @@ class ProcedureSymbol(BaseSymbol):
 
     def __str__(self) -> str:
         if len(self.procedure_node.params) == 0:
-            return f"<procedure> (id: {repr(self.name)}, parameters: <no params>)"
+            return f"<procedure> (id: {repr(self.id)}, parameters: <no params>)"
         else:
             # Okay, yes this is (slightly less) horrendous don't @me
             parameter_list = ', '.join(
@@ -714,7 +732,7 @@ class ProcedureSymbol(BaseSymbol):
                     )
                 )
             )
-            return f"<procedure> (id: {repr(self.name)}, parameters: [{parameter_list}])"
+            return f"<procedure> (id: {repr(self.id)}, parameters: [{parameter_list}])"
 
 
 ###########################################
@@ -745,9 +763,18 @@ class SymbolTable:
         # <builtins> table, which represents all the built-in
         # types. These are defined internally here:
         if self.scope_level == 0:
-            self.define(BuiltinSymbol(Int))
-            self.define(BuiltinSymbol(Float))
-            self.define(BuiltinSymbol(Bool))
+            self.define(BuiltinTypeSymbol(Int))
+            self.define(BuiltinTypeSymbol(Float))
+            self.define(BuiltinTypeSymbol(Bool))
+            self.define(BuiltinTypeSymbol(String))
+            
+            # TODO: Add builtin_methods.py and load all the functions here
+            # EXAMPLE OF HOW THIS WOULD WORK
+            def p():
+                print("hooray!")
+            self.define(BuiltinProcedureSymbol(p))
+            
+            
             log("SymbolTable: Defined built-in symbols for", repr(self.scope_name), level=LogLevel.VERBOSE)
 
     def __str__(self) -> str:
@@ -784,13 +811,13 @@ class SymbolTable:
         # a list of all the objects which are that type.
 
         # Show the built-in symbols first
-        builtin_types: list[BuiltinSymbol] = symbols.get(BuiltinSymbol.__name__)
+        builtin_types: list[BuiltinTypeSymbol] = symbols.get(BuiltinTypeSymbol.__name__)
         if builtin_types is not None:
             for builtin_type in builtin_types:
                 text += "  " + str(builtin_type) + "\n"
             text += "\n"
             # Remove it from `symbols` so it is not shown again
-            del symbols[BuiltinSymbol.__name__]
+            del symbols[BuiltinTypeSymbol.__name__]
 
         # Now show the remaining symbols
         for _, symbols in symbols.items():
@@ -815,7 +842,7 @@ class SymbolTable:
         """
         symbol.scope_level = self.scope_level
         log(f"SymbolTable {repr(self.scope_name)}: define {repr(str(symbol))} into scope {repr(self.scope_name)}", level=LogLevel.HIGHLY_VERBOSE)
-        self._symbols[symbol.name] = symbol
+        self._symbols[symbol.id] = symbol
 
     def lookup(self, symbol_name: str, search_parent_scopes: bool = True) -> BaseSymbol | None:
         """
@@ -942,7 +969,6 @@ class CallStack:
         return None
 
 
-
 ###########################################
 #                                         #
 #   Node visitor code                     #
@@ -1041,6 +1067,7 @@ class Lexer:
             'int'       :   (TokenType.INTEGER, Int),
             'float'     :   (TokenType.FLOAT, Float),
             'bool'      :   (TokenType.BOOLEAN, Bool),
+            'string'    :   (TokenType.STRING, String),
             'True'      :   (TokenType.BOOLEAN_LITERAL, Bool(1)),
             'False'     :   (TokenType.BOOLEAN_LITERAL, Bool(0))
         }
@@ -1196,6 +1223,33 @@ class Lexer:
 
         return token
 
+    def string(self) -> Token:
+        
+        start_pos = self.pos
+        
+        # Ignore opening '"'
+        self.advance()
+        
+        string = ""
+        
+        while self.current_char != '"':
+            if self.current_char == '\\' and self.peek() == '"':
+                self.advance()
+                self.advance()
+                string += '"'
+            elif self.current_char == '\n':
+                self.error(
+                    message=f"Unterminated string literal at line {self.lineno}"
+                )
+            else:
+                string += self.current_char
+                self.advance()
+                
+        # Skip over closing '"'
+        self.advance()
+        
+        return Token(TokenType.STRING_LITERAL, String(string), self.lineno, self.linecol, start_pos)
+            
     def get_next_token(self) -> Token:
         """
         Responsible for breaking down and extracting 
@@ -1232,6 +1286,9 @@ class Lexer:
             elif self.current_char.isdigit():
                 return self.number()
 
+            elif self.current_char == '"':
+                return self.string()
+                
             # Operators
 
             elif self.current_char == "=":
@@ -1432,7 +1489,6 @@ class Parser:
                     message=f"Expected type <{expected_type.name}> but got type <{self.current_token.type.name}>"
                 )
 
-    # Could be a function native to `Token`
     def is_type(self) -> bool:
         """
         Check if the current token is a datatype
@@ -1441,6 +1497,7 @@ class Parser:
             TokenType.INTEGER,
             TokenType.FLOAT,
             TokenType.BOOLEAN,
+            TokenType.STRING,
         ]:
             return True
         else:
@@ -1931,6 +1988,7 @@ class Parser:
                 | `INTEGER_LITERAL`
                 | `FLOAT_LITERAL` 
                 | `BOOLEAN_LITERAL`
+                | `STRING_LITERAL`
                 | `LPAREN` expr `RPAREN`
                 | variable
         """
@@ -1956,9 +2014,15 @@ class Parser:
             self.eat(TokenType.FLOAT_LITERAL)
             node = NumNode(token)
 
+        # `BOOLEAN_LITERAL`
         elif token.type == TokenType.BOOLEAN_LITERAL:
             self.eat(TokenType.BOOLEAN_LITERAL)
             node = BoolNode(token)
+
+        # `STRING_LITERAL`
+        elif token.type == TokenType.STRING_LITERAL:
+            self.eat(TokenType.STRING_LITERAL)
+            node = StringNode(token)
 
         # `LPAREN` expr `RPAREN`
         elif token.type == TokenType.LPAREN:
@@ -2118,7 +2182,7 @@ class SemanticAnalyser(NodeVisitor):
             self.visit(child)
 
     def visit_VarDecl(self, node: VarDecl):
-        type_symbol = self.visit(node.type_node)
+        self.visit(node.type_node)
 
         var_id = node.var_node.id
         if var_id == "_":
@@ -2131,7 +2195,7 @@ class SemanticAnalyser(NodeVisitor):
                 message="Cannot initialise variable with same name"
             )
 
-        var_symbol = VarSymbol(var_id, type_symbol)
+        var_symbol = VarSymbol(var_id)
         self.current_scope.define(var_symbol)
 
         if node.expr_node is not None:
@@ -2157,9 +2221,8 @@ class SemanticAnalyser(NodeVisitor):
         self.current_scope = proc_scope
 
         for param in proc_params:
-            param_type = self.current_scope.lookup(param.type_node.token.id)
             param_name = param.var_node.id
-            var_symbol = VarSymbol(param_name, param_type)
+            var_symbol = VarSymbol(param_name)
             self.current_scope.define(var_symbol)
 
         self.visit(node.compound_node)
@@ -2250,6 +2313,9 @@ class SemanticAnalyser(NodeVisitor):
         pass
 
     def visit_BoolNode(self, node):
+        pass
+
+    def visit_StringNode(self, node):
         pass
 
     def visit_NoOp(self, node):
@@ -2644,6 +2710,9 @@ class Interpreter(NodeVisitor):
         return node.id
 
     def visit_BoolNode(self, node: BoolNode):
+        return node.id
+
+    def visit_StringNode(self, node: StringNode):
         return node.id
 
     def visit_NoOp(self, node: NoOp):

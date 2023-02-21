@@ -15,16 +15,19 @@ class Type:
     def to(self, to_type: Type):
         if to_type == type(self):
             return self
-        matching_function = getattr(self, "to" + to_type.__name__, self._no_matching_function)
+        def _no_matching_function(self):
+            return None
+        matching_function = getattr(self, "to" + to_type.__name__, _no_matching_function)
         return matching_function()
         
-    def _no_matching_function(self):
-        return None
         
 
 class NoneType(Type):
     def __init__(self) -> None:
         super().__init__(None)
+        
+    def __str__(self) -> str:
+        return f"{self.__class__.__name__}()"
             
     def toFloat(self):
         return Float(0.0)
@@ -34,6 +37,9 @@ class NoneType(Type):
     
     def toBool(self):
         return Bool(0)
+    
+    def toString(self):
+        return String("")
     
 
 class Bool(Type):
@@ -49,6 +55,9 @@ class Bool(Type):
 
     def toFloat(self):
         return Float(float(self.value))
+    
+    def toString(self):
+        return String('False' if (self.value == 0) else 'True')
 
 
 class Int(Type):
@@ -60,6 +69,9 @@ class Int(Type):
     
     def toBool(self):
         return Bool(int(self.value))
+    
+    def toString(self):
+        return String(str(self.value))
 
 
 class Float(Type):
@@ -71,6 +83,21 @@ class Float(Type):
     
     def toBool(self):
         return Bool(int(self.value))
+    
+    def toString(self):
+        return String(str(self.value))
+    
+    
+class String(Type):
+    def __init__(self, value) -> None:
+        super().__init__(str(value))
+        
+    def __str__(self) -> str:
+        formatted_value = self.value.replace('"', '\\"')
+        return f'{self.__class__.__name__}("{formatted_value}")'
+        
+    # TODO: add more complex parsing
+
 
 # We don't want to import this into other files
 del annotations

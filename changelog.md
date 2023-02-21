@@ -2,6 +2,19 @@
 Format: `[version] - DD-MM-YYYY`
 #
 
+## [0.0.1-pre.44] - 21-02-2023
+
+### Added
+
+- `string` datatype
+- `strings.sap` to demonstrate syntax
+- Some basic skeleton code to demonstrate a potential implementation of builtin methods
+- Along with this, a `builtin_methods.py` which will eventually be used to store all built in methods
+
+### Changed
+
+- Everybody's favourite! Code cleanup!
+
 ## [0.0.1-pre.43] - 16-02-2023
 
 Pretty big update here
