@@ -5,7 +5,9 @@ fn fib(int n) {
     while a < n {
         temp = a
         a = b
-        b = temp+b
+        b = temp+bee
+        print(temp)
+        print(", ")
     }
 }
 

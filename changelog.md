@@ -2,6 +2,28 @@
 Format: `[version] - DD-MM-YYYY`
 #
 
+## [0.0.1-pre.45] - 20-03-2023
+
+Nearly a month of inactivity cause my laptop broke lol
+
+### Added
+
+- Built-in functions which link to actual python functions and can be executed from within the code!
+- The only two functions right now are `print` and `println`
+- Colours! Various messages printed to stdout now have colour (Windows only)
+- `VarSymbol` now also keeps track of the variable type, not used right now but will (potentially) be used in future for semantic analysis
+
+### Changes
+
+- The built-in symbol table is now created explicity instead of inside of the semantic analyser, this allows more flexibility and lays the groundwork for a potential package/module system.
+- Restructed error printing code to reduce number of lines
+- Renamed some of the attributes of `BuiltinProcedureSymbol` to make more sense
+- More spelling fixes
+
+### Removed
+
+- `BuiltinTypeSymbol` class, this is because types are now treated as part of the base syntax, making this code redundant.
+
 ## [0.0.1-pre.44] - 21-02-2023
 
 ### Added

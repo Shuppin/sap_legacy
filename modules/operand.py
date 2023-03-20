@@ -75,6 +75,8 @@ def operand(op_str: str, obj1: Type, obj2: Type = None) -> Type | None:
         return Float(operation(obj1.value, obj2.value))
     elif matches('-', Int|Float, type(None)):
         return Float(-obj1.value)
+    elif matches('+', String, String):
+        return String(obj1.value + obj2.value)
 
     # Logic
     elif matches(['and', 'or'], Int|Float|Bool, Int|Float|Bool):

@@ -6,27 +6,33 @@ from collections    import defaultdict
 from enum           import Enum
 from inspect        import currentframe
 from inspect        import getframeinfo
+from os             import system
 from os.path        import isfile
+from os             import name as system_name
 from sys            import argv
 from sys            import stdout
 from typing         import Any
 from time           import time as current_time
 
-from modules.config         import ConfigParser
+from modules.builtin_methods    import mapping as builtin_method_mapping
+from modules.config             import ConfigParser
 
 from modules.operand        import *
 from modules.builtin_types  import *
 
 # TODO:
 # * Make boolean type parsing a little stricter?
-# * Move type checker to semantic analyser?
-#   Attempted, will increase complexity with current solution, so maybe a future iteration
-#   - Mapping for binop in unop defining what datatypes are returned
 # * Add syntax warnings
-# * Add built-in procedure framework
-#   - Whole module framework?
+# * Add package framework
+#   - Run a file in module mode and spit out a symbol table,
+#   - which is then fed into the main program
+# * Add proper argument parsing for procedures (built-in and user defined)
+# * Add procedure return functionality
+# * Add more documentation
+# * Add more built-in functions
+#   - Add type parsing methods such as str() and int()
 
-__version__ = "0.0.1-pre.44"
+__version__ = "0.0.1-pre.45"
 
 # Load config information first
 config_path = "config.toml"
@@ -138,6 +144,21 @@ class Token:
         return repr(self.__str__())
 
 
+# Change the value to just return empty if not running on windows
+# This prevents weird looking output on other platforms
+_filter = lambda string: string if system_name == 'nt' else ''
+
+class TermColour:
+    BOLD    = _filter("\033[1m")
+    CYAN    = _filter("\033[96m")
+    DEFAULT = _filter("\033[0m")
+    LIME    = _filter("\033[92m")
+    RED     = _filter("\033[91m")
+    WHITE   = _filter("\033[97m")
+
+# Remove it after since we don't want it being used anywhere else
+del _filter
+
 class LogLevel:
     """
     Data class which holds all the logging levels used by the logger
@@ -188,7 +209,7 @@ class BaseError(Exception):
             surrounding_lines: list[str] = None
     ):
         self.error_code: ErrorCode = error_code
-        self.message: str = f'{self.__class__.__name__[:-5]} :: {self.error_code.value}: {message}'
+        self.message: str = f' {TermColour.CYAN}{TermColour.BOLD}{self.__class__.__name__[:-5]} {TermColour.WHITE}:: {TermColour.RED}{self.error_code.value}{TermColour.DEFAULT}{TermColour.WHITE}: {message}{TermColour.DEFAULT}'
         self.token: Token | list[Token] | None= token
         self.surrounding_lines: list[str] | None = surrounding_lines
         # We need the position at which the error occurred,
@@ -259,47 +280,54 @@ class BaseError(Exception):
             VERT_BAR = "│"
         else:
             VERT_BAR = "|"
-
-        # Creates the message with the '~~~' highlighter
+        
+        # Create the surrounding lines and header of the error message
+        error_message = [
+            (f'{TermColour.BOLD}{TermColour.RED} Error{TermColour.WHITE} aborting execution due to error{TermColour.DEFAULT}\n\n'),
+            # The if clauses here will ensure it prints the surrounding lines only if it exists
+            (f" {TermColour.DEFAULT}{TermColour.CYAN}{' '*(len(str(self.lineno+2)))}-->{TermColour.WHITE} {current_filename}:{self.lineno}:{self.linecol}\n"),
+            (f" {TermColour.CYAN}{TermColour.BOLD}{' '*(len(str(self.lineno+2)))} {VERT_BAR}\n"),
+            (f" {TermColour.CYAN}{TermColour.BOLD}{' '*(len(str(self.lineno+2)) - len(str(self.lineno-3)))}{self.lineno-3} {VERT_BAR}{TermColour.DEFAULT} {self.surrounding_lines[self.lineno-4]}\n" if (self.lineno-4) >= 0 else f""),
+            (f" {TermColour.CYAN}{TermColour.BOLD}{' '*(len(str(self.lineno+2)) - len(str(self.lineno-2)))}{self.lineno-2} {VERT_BAR}{TermColour.DEFAULT} {self.surrounding_lines[self.lineno-3]}\n" if (self.lineno-3) >= 0 else f""),
+            (f" {TermColour.CYAN}{TermColour.BOLD}{' '*(len(str(self.lineno+2)) - len(str(self.lineno-1)))}{self.lineno-1} {VERT_BAR}{TermColour.DEFAULT} {self.surrounding_lines[self.lineno-2]}\n" if (self.lineno-2) >= 0 else f""),
+            ]
+        
+        # Creates the message with the '~~~' highlighter, and the relevant text coloured in
         # For example:
         # | 1 | inte x = 4;
         #       ~~~~
         if self.surrounding_lines is not None and self.token is not None and self.token.startcol is not None:
-            error_message = [
-                (f'File "{current_filename}", position <{self.lineno}:{self.linecol}>\n'),
-                # The if clauses here will ensure it prints the surrounding lines only if it exists
-                (f" {VERT_BAR} {' '*(len(str(self.lineno+2)) - len(str(self.lineno-3)))}{self.lineno-3} {VERT_BAR} {self.surrounding_lines[self.lineno-4]}\n" if (self.lineno-4) >= 0 else f""),
-                (f" {VERT_BAR} {' '*(len(str(self.lineno+2)) - len(str(self.lineno-2)))}{self.lineno-2} {VERT_BAR} {self.surrounding_lines[self.lineno-3]}\n" if (self.lineno-3) >= 0 else f""),
-                (f" {VERT_BAR} {' '*(len(str(self.lineno+2)) - len(str(self.lineno-1)))}{self.lineno-1} {VERT_BAR} {self.surrounding_lines[self.lineno-2]}\n" if (self.lineno-2) >= 0 else f""),
-                (f" {VERT_BAR} {' '*(len(str(self.lineno+2)) - len(str(self.lineno  )))}{self.lineno  } {VERT_BAR} {self.surrounding_lines[self.lineno-1]}\n"),
-                (f"   {' '*len(str(self.lineno+2))}  {' ' * self.token.startcol} {'~' * (self.linecol - self.token.startcol)}\n"),
-                (self.message)
-                ]
-            error_message = "".join(error_message)
-
-        # Creates the message with the '^' highlighter
+            highlighted_line = f"{self.surrounding_lines[self.lineno-1][:self.token.startcol]}{TermColour.BOLD}{TermColour.LIME}{self.surrounding_lines[self.lineno-1][self.token.startcol:self.linecol]}{TermColour.DEFAULT}{self.surrounding_lines[self.lineno-1][self.linecol:]}"
+            error_message.append(
+                (f" {TermColour.CYAN}{TermColour.BOLD}{' '*(len(str(self.lineno+2)) - len(str(self.lineno  )))}{self.lineno  } {VERT_BAR}{TermColour.DEFAULT} {highlighted_line}\n"),
+            )
+            error_message.append(
+                f" {TermColour.CYAN}{TermColour.BOLD}{' '*(len(str(self.lineno+2)))} {VERT_BAR}{' ' * self.token.startcol} {TermColour.LIME}{'~' * (self.linecol - self.token.startcol)}{TermColour.DEFAULT}\n\n"
+            )
+            error_message.append(self.message)
+            error_message = "".join(error_message)  # Turn the list of lines into one big string
+            
+        # Creates the message with the '^' highlighter, and the relevant text coloured in
         # For example:
         # | 1 | int x = 4 $ 3
         #                 ^
         elif self.surrounding_lines is not None:
-            error_message = [
-                (f'File "{current_filename}", position <{self.lineno}:{self.linecol}>\n'),
-                # The if clauses here will ensure it prints the surrounding lines only if it exists
-                (f" {VERT_BAR} {' '*(len(str(self.lineno+2)) - len(str(self.lineno-3)))}{self.lineno-3} {VERT_BAR} {self.surrounding_lines[self.lineno-4]}\n" if (self.lineno-4) >= 0 else f""),
-                (f" {VERT_BAR} {' '*(len(str(self.lineno+2)) - len(str(self.lineno-2)))}{self.lineno-2} {VERT_BAR} {self.surrounding_lines[self.lineno-3]}\n" if (self.lineno-3) >= 0 else f""),
-                (f" {VERT_BAR} {' '*(len(str(self.lineno+2)) - len(str(self.lineno-1)))}{self.lineno-1} {VERT_BAR} {self.surrounding_lines[self.lineno-2]}\n" if (self.lineno-2) >= 0 else f""),
-                (f" {VERT_BAR} {' '*(len(str(self.lineno+2)) - len(str(self.lineno  )))}{self.lineno  } {VERT_BAR} {self.surrounding_lines[self.lineno-1]}\n"),
-                (f"   {' '*len(str(self.lineno+2))}  {' '*self.linecol} ^\n"),
-                (self.message)
-                ]
-            error_message = "".join(error_message)
+            highlighted_line = f"{self.surrounding_lines[self.lineno-1][:self.linecol]}{TermColour.BOLD}{TermColour.LIME}{self.surrounding_lines[self.lineno-1][self.linecol]}{TermColour.DEFAULT}{self.surrounding_lines[self.lineno-1][self.linecol+1:]}"
+            error_message.append(
+                (f" {TermColour.CYAN}{TermColour.BOLD}{' '*(len(str(self.lineno+2)) - len(str(self.lineno  )))}{self.lineno  } {VERT_BAR}{TermColour.DEFAULT} {highlighted_line}\n"),
+            )
+            error_message.append(
+                f" {TermColour.CYAN}{TermColour.BOLD}{' '*(len(str(self.lineno+2)))} {VERT_BAR}{' '*self.linecol} {TermColour.LIME}^{TermColour.DEFAULT}\n\n"
+            )
+            error_message.append(self.message)
+            error_message = "".join(error_message)  # Turn the list of lines into one big string
         # If no surrounding lines were passed for whatever reason,
-        # just print without surrounding lines
+        # just print a little error message saying '<error fetching lines>' instead
         else:
-            error_message = (f'File "{current_filename}", position <{self.lineno}:{self.linecol}>\n'
-                             f'   <error fetching lines>\n'
+            error_message = (f'{TermColour.BOLD}{TermColour.RED} Error{TermColour.WHITE} aborting execution due to error{TermColour.DEFAULT}\n\n'
+                             f'{TermColour.BOLD}{TermColour.RED}<error fetching lines>{TermColour.DEFAULT}\n\n'
                              f'{self.message}')
-
+        
         log(f"{type(self).__name__}: Successfully constructed error message")
         log(f"{type(self).__name__}: Program terminating with a success state", level=LogLevel.INFO)
 
@@ -529,7 +557,7 @@ class ProcedureCall(InteriorNode):
     def __init__(self, procedure_var: VarNode, literal_params: list[Param]):
         self.procedure_var: VarNode = procedure_var
         self.literal_params: list[Param] = literal_params
-        self.procedure_symbol: ProcedureSymbol | None = None
+        self.procedure_symbol: ProcedureSymbol | BuiltinProcedureSymbol | None = None
 
 
 class WhileStatement(InteriorNode):
@@ -679,36 +707,25 @@ class BaseSymbol:
     def __str__(self) -> str:
         return self.name
 
-
-class BuiltinTypeSymbol(BaseSymbol):
-    """
-    Symbol which represents built in types
-    """
-    def __init__(self, ref):
-        super().__init__(ref)
-
-    def __str__(self) -> str:
-        return f"<builtin> {self.id}"
-
-
 class BuiltinProcedureSymbol(BaseSymbol):
-    def __init__(self, callable):
-        super().__init__(callable)
-        self.callable = callable
+    def __init__(self, id: str, callable: callable):
+        super().__init__(id)
+        self.callable: callable = callable
         
     def __str__(self) -> str:
-        return f"<builtin-proc> {self.callable}"
+        return f"<builtin-proc> {repr(self.id)} <function {self.callable.__name__}>"
 
 
 class VarSymbol(BaseSymbol):
     """
     Symbol which represents user-defined variables
     """
-    def __init__(self, id):
+    def __init__(self, id, var_type):
         super().__init__(id)
+        self.type: Type = var_type
 
     def __str__(self) -> str:
-        return f"<variable> (id: {repr(self.id)})"
+        return f"<variable> (id: {repr(self.id)}, type: {self.type})"
 
 
 class ProcedureSymbol(BaseSymbol):
@@ -717,7 +734,7 @@ class ProcedureSymbol(BaseSymbol):
     """
     def __init__(self, name: str, procedure_node: ProcedureDecl):
         super().__init__(name)
-        self.procedure_node = procedure_node
+        self.procedure_node: ProcedureDecl = procedure_node
 
     def __str__(self) -> str:
         if len(self.procedure_node.params) == 0:
@@ -759,24 +776,6 @@ class SymbolTable:
         self.scope_level: int = scope_level
         self.parent_scope: SymbolTable | None = parent_scope
 
-        # The only table with a scope level of 0 should be the
-        # <builtins> table, which represents all the built-in
-        # types. These are defined internally here:
-        if self.scope_level == 0:
-            self.define(BuiltinTypeSymbol(Int))
-            self.define(BuiltinTypeSymbol(Float))
-            self.define(BuiltinTypeSymbol(Bool))
-            self.define(BuiltinTypeSymbol(String))
-            
-            # TODO: Add builtin_methods.py and load all the functions here
-            # EXAMPLE OF HOW THIS WOULD WORK
-            def p():
-                print("hooray!")
-            self.define(BuiltinProcedureSymbol(p))
-            
-            
-            log("SymbolTable: Defined built-in symbols for", repr(self.scope_name), level=LogLevel.VERBOSE)
-
     def __str__(self) -> str:
         # Add header information
         text = "\nSCOPE (SCOPED SYMBOL TABLE):\n"
@@ -809,15 +808,6 @@ class SymbolTable:
         # At this point `symbols` is a dictionary (dict[str, list])
         # containing the name of each (present) symbol type and
         # a list of all the objects which are that type.
-
-        # Show the built-in symbols first
-        builtin_types: list[BuiltinTypeSymbol] = symbols.get(BuiltinTypeSymbol.__name__)
-        if builtin_types is not None:
-            for builtin_type in builtin_types:
-                text += "  " + str(builtin_type) + "\n"
-            text += "\n"
-            # Remove it from `symbols` so it is not shown again
-            del symbols[BuiltinTypeSymbol.__name__]
 
         # Now show the remaining symbols
         for _, symbols in symbols.items():
@@ -2132,9 +2122,10 @@ class SemanticAnalyser(NodeVisitor):
     """
     Constructs the symbol table and performs type-checks before runtime
     """
-    def __init__(self, src: str):
+    def __init__(self, src: str, builtin_scope: SymbolTable):
         super().__init__()
         self.src_lines: list[str] = src.split('\n')
+        self.builtin_scope = builtin_scope
         self.current_scope: SymbolTable | None = None
         log("SemanticAnalyser.__init__() complete", stackoffset=1)
 
@@ -2150,26 +2141,31 @@ class SemanticAnalyser(NodeVisitor):
         """
         Performs semantic analysis before executing the code
         """
-        log("SemanticAnalyser: Performing analysis and creating symbol tables")
+        log("SemanticAnalyser: Performing analysis...")
         self.visit(tree)
         log("SemanticAnalyser: Analysis complete!")
 
     def visit_Program(self, node: Program):
-        # Create new symbol tables for the program
-        # Might move <builtins> declaration to a separate place when modules are added
-        log("SemanticAnalyser: creating '<builtins>' symbol table", level=LogLevel.VERBOSE)
-        builtin_scope = SymbolTable(scope_name="<builtins>", scope_level=0)
+        
+        # Log the contents of the built-ins symbol table
+        log(f"SemanticAnalyser: Loaded {repr(self.builtin_scope.scope_name)} symbol table", level=LogLevel.VERBOSE)
+        log("SemanticAnalyser: SCOPE", repr(self.builtin_scope.scope_name), level=LogLevel.HIGHLY_VERBOSE)
+        log(str(self.builtin_scope), level=LogLevel.HIGHLY_VERBOSE, prefix_per_line=" |   ")
+        log("SemanticAnalyser: SCOPE", repr(self.builtin_scope.scope_name), "END", level=LogLevel.HIGHLY_VERBOSE)
+        
+        # Create global scoped symbol table
         log("SemanticAnalyser: creating '<global>' symbol table", level=LogLevel.VERBOSE)
-        global_scope = SymbolTable(scope_name="<global>", scope_level=1, parent_scope=builtin_scope)
+        global_scope = SymbolTable(scope_name="<global>", scope_level=1, parent_scope=self.builtin_scope)
         self.current_scope = global_scope
-
-        log("SemanticAnalyser: SCOPE", repr(builtin_scope.scope_name), level=LogLevel.HIGHLY_VERBOSE)
-        log(str(builtin_scope), level=LogLevel.HIGHLY_VERBOSE, prefix_per_line=" |   ")
-        log("SemanticAnalyser: SCOPE", repr(builtin_scope.scope_name), "END", level=LogLevel.HIGHLY_VERBOSE)
+        
+        log("SemanticAnalyser: Base symbol tables created, proceeding to analyse tree...", level=LogLevel.VERBOSE)
 
         for child in node.statements:
             self.visit(child)
 
+        log("SemanticAnalyser: Finished analysing tree!", level=LogLevel.VERBOSE)
+
+        # Log the contents of the global scoped symbol table after the program has been analysed
         log("SemanticAnalyser: SCOPE", repr(global_scope.scope_name), level=LogLevel.HIGHLY_VERBOSE)
         log(str(global_scope), level=LogLevel.HIGHLY_VERBOSE, prefix_per_line=" |   ")
         log("SemanticAnalyser: SCOPE", repr(global_scope.scope_name), "END", level=LogLevel.HIGHLY_VERBOSE)
@@ -2185,6 +2181,8 @@ class SemanticAnalyser(NodeVisitor):
         self.visit(node.type_node)
 
         var_id = node.var_node.id
+        var_type = node.type_node.token.id
+        
         if var_id == "_":
             return
 
@@ -2195,7 +2193,7 @@ class SemanticAnalyser(NodeVisitor):
                 message="Cannot initialise variable with same name"
             )
 
-        var_symbol = VarSymbol(var_id)
+        var_symbol = VarSymbol(var_id, var_type)
         self.current_scope.define(var_symbol)
 
         if node.expr_node is not None:
@@ -2222,7 +2220,7 @@ class SemanticAnalyser(NodeVisitor):
 
         for param in proc_params:
             param_name = param.var_node.id
-            var_symbol = VarSymbol(param_name)
+            var_symbol = VarSymbol(param_name, "<procedure>")
             self.current_scope.define(var_symbol)
 
         self.visit(node.compound_node)
@@ -2285,16 +2283,15 @@ class SemanticAnalyser(NodeVisitor):
 
     def visit_TypeNode(self, node: TypeNode):
         type_id = node.token.id
-        type_symbol = self.current_scope.lookup(type_id)
 
-        if type_symbol is None:
+        if not issubclass(type_id, Type):
             self.error(
                 error_code=ErrorCode.NAME_ERROR,
                 token=node.token,
                 message=f"Unrecognised type {repr(type_id.__name__)}"
             )
         else:
-            return type_symbol
+            return type_id
 
     def visit_VarNode(self, node: VarNode):
         var_id = node.id
@@ -2358,6 +2355,16 @@ class Interpreter(NodeVisitor):
         log(f"Interpreter: displaying {error_code.value}: {repr(message)} at <{token.lineno}:{token.linecol}>")
         error = InterpreterError(error_code, message, token, surrounding_lines=self.src_lines)
         error.trigger()
+        
+    def execute_builtin_procedure(self, procedure_call: ProcedureCall):
+        func = procedure_call.procedure_symbol.callable
+        # visit/evaluate each parameter and map it to a new list
+        params = list(map(
+            lambda param: self.visit(param),
+            procedure_call.literal_params
+        ))
+        # Actually execute the function
+        func(*params)
 
     def visit_Program(self, node: Program):
         log(f"Interpreter: Interpreting tree", repr(node))
@@ -2439,10 +2446,15 @@ class Interpreter(NodeVisitor):
     def visit_ProcedureDecl(self, node):
         # No code needed since all information we need
         # about a procedure is stored in the symbol table.
-        # Funciton exists so that walking the tree does not error
+        # Function exists so that walking the tree does not error
         pass
 
     def visit_ProcedureCall(self, node: ProcedureCall):
+        
+        # Check if the procedure is built-in, and execute a special function if so
+        if isinstance(node.procedure_symbol, BuiltinProcedureSymbol):
+            self.execute_builtin_procedure(node)
+            return
         
         procedure_name = node.procedure_var.id
         log(f'Interpreter: calling procedure {repr(procedure_name)}', level=LogLevel.VERBOSE)
@@ -2681,7 +2693,7 @@ class Interpreter(NodeVisitor):
         return value
 
     def visit_TypeNode(self, node: TypeNode):
-        # Not utilised yet
+        # Already checked by semantic analyser so we don't need to worry about this
         pass
 
     def visit_VarNode(self, node: VarNode):
@@ -2751,6 +2763,7 @@ class Driver:
             global current_filename
             current_filename = self.filename
             log(f"Driver.run_program(): Set global `current_filename` to {repr(self.filename)}")
+            print(f"{TermColour.LIME}{TermColour.BOLD} Running{TermColour.WHITE} `{current_filename}`{TermColour.DEFAULT}")
             self.file_input(self.filename)
         else:
             log(f"ValueError: mode {repr(self.mode)} is not a valid mode.", level=LogLevel.CRITICAL)
@@ -2791,7 +2804,22 @@ class Driver:
     def _process(self, code: str):
         log("Driver._process(): Initialising modules")
         parser = Parser(src=code)
-        symbol_table = SemanticAnalyser(src=code)
+        
+        # All builtin symbols are inserted into the program at this stage
+        builtin_symbol_table = SymbolTable(
+            scope_name='<builtins>',
+            scope_level=0
+        )
+        for key, value in builtin_method_mapping.items():
+            builtin_symbol_table.define(
+                BuiltinProcedureSymbol(key, value["callable"])
+            )
+        log("Driver._process(): Defined built-in symbols for", repr(builtin_symbol_table.scope_name), level=LogLevel.VERBOSE)
+        
+        symbol_table = SemanticAnalyser(
+            src=code,
+            builtin_scope=builtin_symbol_table
+        )
         interpreter = Interpreter(code)
 
         log("Driver._process(): All modules initialised")
@@ -2874,8 +2902,8 @@ def log(*message, level: int = LogLevel.DEBUG, stackoffset: int = 0, prefix_per_
     Params:
     - `*message`: The message to be logged
     - `level` (optional): The logging level at which to write to the log
-    - `stackoffset` (optional): The number at which to offset the stack used by the logger
-    to obtain information like line number or current function
+    - `stackoffset` (optional): The number at which to offset the stack. Used by the logger
+    to obtain information like line number or the name of the current function
     - `prefix_per_line` (optional): What to prefix each line with, particularly useful
     for multi-line messages
     """
@@ -2902,6 +2930,9 @@ if config.getbool("behaviour.logging_enabled"):
 if __name__ == '__main__':
     execution_start_time = current_time()
 
+    if system_name == 'nt':
+        system('color')
+        
     log("Initialising", level=LogLevel.INFO)
 
     driver = Driver()
@@ -2909,4 +2940,4 @@ if __name__ == '__main__':
 
     execution_finish_time = round(current_time()-execution_start_time, 5)
     log(f"Execution finished in {execution_finish_time}s", level=LogLevel.INFO)
-    print(f"Execution finished in {execution_finish_time}s")
+    print(f"\n{TermColour.LIME}{TermColour.BOLD} Finished{TermColour.WHITE} execution in {execution_finish_time}s{TermColour.DEFAULT}")
