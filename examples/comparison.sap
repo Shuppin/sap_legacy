@@ -1,2 +1,14 @@
-bool x = !(3 and 4) == False;
-bool y = 3 < 0 == False;
+// Simple code demonstrating how comparison operators work
+
+int x = 3
+int y = 4
+
+if x == y {
+    println("x is equal to y")
+} elseif x > y {
+    println("x is greater than y")
+} else {
+    println("x is less than y")
+}
+
+// You can also use ~=, >=, <, <=

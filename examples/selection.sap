@@ -1,13 +1,15 @@
+// Simple example code demonstrating if, elseif and else statements
+
 int x = 4
 int y = 10
 int z
 
 if x > 4 {
-    inc y
+    
 }
-elseif x > 3 {
-    dec y
+elseif x > 2 {
+    
 }
 else {
-    y = 0
+    
 }

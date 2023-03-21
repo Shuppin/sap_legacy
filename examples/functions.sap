@@ -1,0 +1,31 @@
+// Function declarations
+
+fn simple_function() {
+
+}
+
+fn function_with_arguments(int x, float y) {
+
+}
+
+fn function_with_return_type() -> int {
+
+}
+
+fn function_outside(int x) {
+    fn function_inside() {
+        println("I can access variables in my parent scope, like x:", x)
+        x = 20
+        println("However when I change x to", x, "inside this function")
+    }
+
+    function_inside()
+    println("It doesn't affect x in the parent scope, since x is still", x, "in the parent scope")
+}
+
+// Function Calls
+simple_function()
+function_with_arguments(2, 3.14)
+function_with_return_type()
+
+function_outside(10)

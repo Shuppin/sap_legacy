@@ -2,6 +2,21 @@
 Format: `[version] - DD-MM-YYYY`
 #
 
+## [0.0.1-pre.46] - 21-03-2023
+
+### Added
+
+- Modulus `%` operator, order of operations lies before addition, but after multiplication
+
+### Changes
+
+- Revised example code, much better structure and organisation now
+- Small changes to logging, mostly wording and log levels
+- Tried to fix error printer, solved one problem and created 5 more :)
+- Fixed a problem where the incorrect variable type was being passed into the symbol table inside a function
+- Very quick fix to prevent the program from crashing upon zero division by just returning 0 (I know this is awful it's only temporary, i hope)
+
+
 ## [0.0.1-pre.45] - 20-03-2023
 
 Nearly a month of inactivity cause my laptop broke lol

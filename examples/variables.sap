@@ -1,0 +1,24 @@
+// Declaration
+int a
+float b
+string c
+bool d
+
+// Compound Declaration
+int x, y, z
+
+// Declaration and assignment
+int e = 1
+float f = 3.14
+string g = "Hello world!"
+bool h = True
+
+// Assignment
+a = 2
+b = 2.71828
+c = "abcdef"
+d = False
+
+// Variable placeholder
+int _ = 100
+

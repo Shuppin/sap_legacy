@@ -32,8 +32,9 @@ def operand(op_str: str, obj1: Type, obj2: Type = None) -> Type | None:
         '+': lambda x, y: x + y,
         '-': lambda x, y: x - y,
         '*': lambda x, y: x * y,
-        '/': lambda x, y: x / y,
-        '//': lambda x, y: x // y,
+        '/': lambda x, y: x / y if y != 0 else 0,  # TODO: Add proper errors for division by 0, this is an extremely quick fix
+        '//': lambda x, y: x // y if y != 0 else 0,
+        '%': lambda x, y: x%y,
 
         # Logic
         'and': lambda x, y: x and y,
@@ -71,7 +72,7 @@ def operand(op_str: str, obj1: Type, obj2: Type = None) -> Type | None:
     # Match code
 
     # Arithmetic
-    if matches(['+','-','/','*','//'], Int|Float|Bool, Int|Float|Bool):
+    if matches(['+','-','/','*','//','%'], Int|Float|Bool, Int|Float|Bool):
         return Float(operation(obj1.value, obj2.value))
     elif matches('-', Int|Float, type(None)):
         return Float(-obj1.value)
