@@ -32,8 +32,11 @@ from modules.builtin_types  import *
 # * Add more built-in functions
 #   - Add type parsing methods such as str() and int()
 # * Add proper erroring for zero division
+# * Add distinction between seperators and newlines
+#   - In future this will allow for statements with curly brackets
+#     to have the the brackets on a new line
 
-__version__ = "0.0.1-pre.46"
+__version__ = "0.0.1-pre.47"
 
 # Load config information first
 config_path = "config.toml"
@@ -92,14 +95,14 @@ class TokenType(Enum):
     ELSEIF          = 'elseif'
     ELSE            = 'else'
     # dynamic token types
-    SEP             = 'SEP'  # Note, newline characters are also treated as seperators
-    STRING_LITERAL  = 'STRING_LITERAL'
-    INTEGER_LITERAL = 'INTEGER_LITERAL'
-    FLOAT_LITERAL   = 'FLOAT_LITERAL'
-    BOOLEAN_LITERAL = 'BOOLEAN_LITERAL'
-    IDENTIFIER      = 'IDENTIFIER'
+    SEP             = '<SEP>'  # Note, newline characters are also treated as seperators
+    STRING_LITERAL  = '<STRING_LITERAL>'
+    INTEGER_LITERAL = '<INTEGER_LITERAL>'
+    FLOAT_LITERAL   = '<FLOAT_LITERAL>'
+    BOOLEAN_LITERAL = '<BOOLEAN_LITERAL>'
+    IDENTIFIER      = '<IDENTIFIER>'
     # other
-    EOF             = 'EOF'
+    EOF             = '<EOF>'
 
 
 class ActivationRecordType(Enum):
@@ -318,13 +321,19 @@ class BaseError(Exception):
         # | 1 | int x = 4 $ 3
         #                 ^
         elif self.surrounding_lines is not None:
-            highlighted_line = f"{self.surrounding_lines[self.lineno-1][:self.linecol-(1 if self.token is None else 0)]}{TermColour.BOLD}{TermColour.LIME}{self.surrounding_lines[self.lineno-1][self.linecol-(1 if self.token is None else 0)]}{TermColour.DEFAULT}{self.surrounding_lines[self.lineno-1][self.linecol+1:]}"
+            try:
+                self.surrounding_lines[self.lineno-1][self.linecol]
+                offset = 0
+            except IndexError:
+                offset = 1
+            highlighted_line = f"{self.surrounding_lines[self.lineno-1][:self.linecol-offset]}{TermColour.BOLD}{TermColour.LIME}{self.surrounding_lines[self.lineno-1][self.linecol-offset]}{TermColour.DEFAULT}{self.surrounding_lines[self.lineno-1][self.linecol+1:]}"
             error_message.append(
                 (f" {TermColour.CYAN}{TermColour.BOLD}{' '*(len(str(self.lineno+2)) - len(str(self.lineno  )))}{self.lineno  } {VERT_BAR}{TermColour.DEFAULT} {highlighted_line}\n"),
             )
             error_message.append(
-                f" {TermColour.CYAN}{TermColour.BOLD}{' '*(len(str(self.lineno+2)))} {VERT_BAR}{' '*self.linecol}{TermColour.LIME}{'' if self.token is None else ' '}^{TermColour.DEFAULT}\n\n"
+                f" {TermColour.CYAN}{TermColour.BOLD}{' '*(len(str(self.lineno+2)))} {VERT_BAR}{' '*self.linecol}{TermColour.LIME}{' ' if offset==0 else ''}^{TermColour.DEFAULT}\n\n"
             )
+
             error_message.append(self.message)
             error_message = "".join(error_message)  # Turn the list of lines into one big string
 
@@ -1079,7 +1088,7 @@ class Lexer:
         """
         # Set default error message
         if message is None:
-            message = f"Could not tokenise {repr(self.current_char)}"
+            message = f"Could not tokenise '{self.current_char}'"
         # Set default position
         if char_pos is None:
             char_pos = [self.lineno, self.linecol]
@@ -1223,7 +1232,9 @@ class Lexer:
     def string(self) -> Token:
         
         start_pos = self.pos
-        
+        start_col = self.linecol
+        start_line = self.lineno
+
         # Ignore opening '"'
         self.advance()
         
@@ -1234,9 +1245,10 @@ class Lexer:
                 self.advance()
                 self.advance()
                 string += '"'
-            elif self.current_char == '\n':
+            elif self.current_char == '\n' or self.current_char is None:
                 self.error(
-                    message=f"Unterminated string literal at line {self.lineno}"
+                    message=f"Unterminated string literal at line {self.lineno}",
+                    char_pos=[start_line, start_col]
                 )
             else:
                 string += self.current_char
@@ -1472,7 +1484,11 @@ class Parser:
             self.previous_token = self.current_token
             self.current_token = self.lexer.get_next_token()
         else:
-            if expected_type == TokenType.END:
+            if expected_type.value.startswith("<") and expected_type.value.endswith(">"):
+                expected_type_str = f"type {expected_type.value}"
+            else:
+                expected_type_str = f"'{expected_type.value}'"
+            if expected_type == TokenType.END or expected_type == TokenType.EOF:
                 self.error(
                     error_code=ErrorCode.SYNTAX_ERROR,
                     token=self.current_token,
@@ -1482,13 +1498,13 @@ class Parser:
                 self.error(
                     error_code=ErrorCode.SYNTAX_ERROR,
                     token=self.current_token,
-                    message=f"Expected type <{expected_type.name}> but got type <{self.current_token.type.name}>, perhaps you forgot a semicolon?"
+                    message=f"Expected {expected_type_str} but got {repr(self.current_token.id)}, perhaps you forgot a semicolon?"
                 )
             else:
                 self.error(
                     error_code=ErrorCode.SYNTAX_ERROR,
                     token=self.current_token,
-                    message=f"Expected type <{expected_type.name}> but got type <{self.current_token.type.name}>"
+                    message=f"Expected {expected_type_str} but got {repr(self.current_token.id)}"
                 )
 
     def is_type(self) -> bool:
