@@ -1,0 +1,41 @@
+// Prints the fibonacci numbers upto n
+fn fib_upto(int n){
+    int a = 0
+    int b = 1
+    int temp = 0
+    while a < n {
+        temp = a
+        a = b
+        b = temp+b
+        println(temp)
+    }
+}
+
+// Prints fizzbuzz upto n
+fn fizzbuzz(int n) {
+    int x = 1
+    while x <= n {
+        string message = ""
+        if x%3==0 {
+            message = message + "fizz"
+        }
+
+        if x%5==0 {
+            message = message + "buzz"
+        }
+
+        if x%3~=0 and x%5~=0 {
+            message = x
+        }
+
+        println(message)
+        inc x
+    }
+}
+
+println("fizzbuzz upto 100:")
+fizzbuzz(100)
+
+println()
+println("Fibonacci sequence upto 2000:")
+fib_upto(2000)

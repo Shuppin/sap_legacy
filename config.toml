@@ -7,9 +7,9 @@ logging_enabled = true
 
 # Modifies the output of the log file
 [logging]
-level       = "ALL"
+level       = "HIGHLY_VERBOSE"
 destination = "runtime.log"
-format      = "%(asctime)s [%(filename)s:%(lineno)04d] %(levelname)-8s - %(message)s"
+format      = "%(asctime)s.%(msecs)03d [%(filename)s:%(lineno)04d] %(levelname)-8s - %(message)s"
 datefmt     = "%H:%M:%S"
 
 # Define the logging levels used by the logger
@@ -26,7 +26,7 @@ ALL             = 5
 [dev]
 # If no file was specified in the arguments, use this instead
 # Overrides default cmdline behaviour
-default_filename  = "examples/builtin_procs.sap"
+default_filename  = "examples/main.sap"
 # This defines how errors are treated
 # If true, it will raise an error with the full stack trace,
 # useful for debugging purposes

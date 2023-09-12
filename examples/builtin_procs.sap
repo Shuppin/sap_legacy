@@ -1,3 +1,0 @@
-int x = 3
-println("Hello world!" + " How are you?")
-println("x is equal to", x)

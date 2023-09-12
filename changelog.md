@@ -20,6 +20,29 @@ See you all when SAP v2.0 comes out!
 
 - Made GitHub repo public.
 
+## [0.0.1-pre.47] - 27-03-2023
+
+### Changes
+
+- Fixed major bug in error printer cause program to crash because it was incorrectly selecting token index
+- Various improvements to error messages
+- Reformatted `changelog.md` replacing 'changed' with 'changes'
+
+## [0.0.1-pre.46] - 21-03-2023
+
+### Added
+
+- Modulus `%` operator, order of operations lies before addition, but after multiplication
+
+### Changes
+
+- Revised example code, much better structure and organisation now
+- Small changes to logging, mostly wording and log levels
+- Tried to fix error printer, solved one problem and created 5 more :)
+- Fixed a problem where the incorrect variable type was being passed into the symbol table inside a function
+- Very quick fix to prevent the program from crashing upon zero division by just returning 0 (I know this is awful it's only temporary, i hope)
+
+
 ## [0.0.1-pre.45] - 20-03-2023
 
 Nearly a month of inactivity cause my laptop broke lol
@@ -51,7 +74,7 @@ Nearly a month of inactivity cause my laptop broke lol
 - Some basic skeleton code to demonstrate a potential implementation of builtin methods
 - Along with this, a `builtin_methods.py` which will eventually be used to store all built in methods
 
-### Changed
+### Changes
 
 - Everybody's favourite! Code cleanup!
 
@@ -68,7 +91,7 @@ Pretty big update here
 - Quickly made skeleton code allowing the error printer to accept a list of tokens as an input. It's likely that this code is riddled with error so i'll update in the future since it's not needed for now
 - `get_nth_token()` method to `Node`, this function allows the code to search for a token in a Node and it's children. Useful for error printing
 
-### Changed
+### Changes
 
 - Fixed a major bug in `variable_assignment()` where a `Token` was being passed instead of a `VarNode`, causing the program to fail later on in `visit_AssignOp()` (Interpreter)
 - Fixed a major bug where program would crash if an expression passed into a selection statement couldn't be evaluated as a boolean
@@ -90,13 +113,13 @@ Pretty big update here
 - Selection is now fully implemented
 - A few comments in the interpreter
 
-### Changed
+### Changes
 
 - Slight logic rework on assign operations
 
 ## [0.0.1-pre.41] - 10-02-2023
 
-### Changed
+### Changes
 
 - Simplified binary operation code
 
@@ -106,7 +129,7 @@ Pretty big update here
 
 ## [0.0.1-pre.40] - 08-02-2023
 
-### Changed
+### Changes
 
 - Completely rewrote arithmetic, logic and comparsion system to use less syntax. `logic.py`, `arithmetic.py` and `comparison.py` have been reduced to a single file `operand.py`
 - Cleaned up code and improved documentation in certain areas
@@ -122,7 +145,7 @@ Pretty big update here
 
 - `comparison.py` module, still needs finishing
 
-### Changed
+### Changes
 
 - `syntax_showcase.sap` & `procedure_calls.sap` now execute fully
 

@@ -1,0 +1,6 @@
+// Call functions with expressions
+println("Hello world!" + " How are you?")
+
+// Call functions with multiple arguments
+int x = 3
+println("x is equal to", x)

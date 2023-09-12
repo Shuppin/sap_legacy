@@ -1,1 +1,10 @@
-string x = "Hell\"o world"
+// Simple code demonstrating how strings work
+
+string x = "Hello world"
+string y = "How are you?\nI'm good!"
+
+string z = x + ", " + y
+
+println(z)
+
+println("Sometimes it's handy to have \"speech marks\" inside your strings too!")
