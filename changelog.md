@@ -2,6 +2,24 @@
 Format: `[version] - DD-MM-YYYY`
 #
 
+## [1.0.0] - 12-09-2023
+
+What is that... a full release!?!
+
+Well... kinda.
+
+It seems this project has plateaued. I have largely achieved my goals for this language, and don't intend to make many updates for in the future. 
+
+See you all when SAP v2.0 comes out!
+
+### Added
+
+- Read me files providing information to whoever may stumble across this ancient artifact.
+
+### Changes
+
+- Made GitHub repo public.
+
 ## [0.0.1-pre.45] - 20-03-2023
 
 Nearly a month of inactivity cause my laptop broke lol

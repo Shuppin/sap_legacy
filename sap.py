@@ -32,7 +32,7 @@ from modules.builtin_types  import *
 # * Add more built-in functions
 #   - Add type parsing methods such as str() and int()
 
-__version__ = "0.0.1-pre.45"
+__version__ = "1.0.0"
 
 # Load config information first
 config_path = "config.toml"
